@@ -1,12 +1,31 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../lib/AuthContext'
 import { supabase } from '../../lib/supabase'
+import V2Header from './components/V2Header'
+import BottomNav from './components/BottomNav'
+import HomeScreen from './screens/HomeScreen'
+import InsightsScreen from './screens/InsightsScreen'
+import BodyScreen from './screens/BodyScreen'
+import ProgressScreen from './screens/ProgressScreen'
+import FuelScreen from './screens/FuelScreen'
+import TrainScreen from './screens/TrainScreen'
+import LogbookScreen from './screens/LogbookScreen'
+import RecoveryScreen from './screens/RecoveryScreen'
+import SystemScreen from './screens/SystemScreen'
 
-const ANGLES = ['front', 'side', 'back']
+// ════════════════════════════════════════════════════════════
+// CLIENT DASHBOARD — V2 visual/structural upgrade.
+//
+// All data-loading logic below (loadWeights, loadNutritionPlan,
+// loadTrainingPlan, loadPhotos, logWeight, handlePhotoUpload) is
+// copied unchanged from the working Phase 1 version. No Supabase
+// table, query, or backend behavior was modified in this pass.
+// Only the screens/components rendering that data were replaced.
+// ════════════════════════════════════════════════════════════
 
 export default function ClientDashboard() {
   const { profile, signOut } = useAuth()
-  const [tab, setTab] = useState('dashboard')
+  const [activeNav, setActiveNav] = useState('home')
 
   const [weights, setWeights] = useState([])
   const [weightInput, setWeightInput] = useState('')
@@ -135,209 +154,62 @@ export default function ClientDashboard() {
       : null
 
   return (
-    <div className="app-shell">
-      <div className="topbar">
-        <div className="brand">
-          {profile?.full_name}
-          <span>Client Dashboard</span>
-        </div>
+    <div className="app-shell" style={{ paddingBottom: 110 }}>
+      <V2Header fullName={profile?.full_name} />
+
+      {activeNav === 'home' && (
+        <HomeScreen
+          profile={profile}
+          latest={latest}
+          avg7={avg7}
+          goalWeight={goalWeight}
+          startWeight={startWeight}
+          progressPct={progressPct}
+          nutritionPlan={nutritionPlan}
+          dayType={dayType}
+          setDayType={setDayType}
+        />
+      )}
+
+      {activeNav === 'insights' && <InsightsScreen />}
+
+      {activeNav === 'body' && (
+        <BodyScreen
+          photos={photos}
+          photoBusy={photoBusy}
+          photoError={photoError}
+          onPhotoUpload={handlePhotoUpload}
+        />
+      )}
+
+      {activeNav === 'progress' && (
+        <ProgressScreen
+          weights={weights}
+          avg7={avg7}
+          weightInput={weightInput}
+          setWeightInput={setWeightInput}
+          weightBusy={weightBusy}
+          onLogWeight={logWeight}
+        />
+      )}
+
+      {activeNav === 'fuel' && (
+        <FuelScreen nutritionPlan={nutritionPlan} dayType={dayType} setDayType={setDayType} />
+      )}
+
+      {activeNav === 'train' && <TrainScreen trainingPlan={trainingPlan} />}
+
+      {activeNav === 'log' && <LogbookScreen />}
+
+      {activeNav === 'recovery' && <RecoveryScreen />}
+
+      {activeNav === 'system' && <SystemScreen />}
+
+      <div style={{ textAlign: 'center', margin: '24px 0' }}>
         <button className="signout-btn" onClick={signOut}>Sign Out</button>
       </div>
 
-      <div className="tab-bar">
-        <button className={`tab-btn ${tab === 'dashboard' ? 'active' : ''}`} onClick={() => setTab('dashboard')}>Dashboard</button>
-        <button className={`tab-btn ${tab === 'nutrition' ? 'active' : ''}`} onClick={() => setTab('nutrition')}>Nutrition</button>
-        <button className={`tab-btn ${tab === 'training' ? 'active' : ''}`} onClick={() => setTab('training')}>Training</button>
-        <button className={`tab-btn ${tab === 'photos' ? 'active' : ''}`} onClick={() => setTab('photos')}>Photos</button>
-      </div>
-
-      {tab === 'dashboard' && (
-        <>
-          <div className="card">
-            <div className="card-title">Weight Tracking</div>
-            <div className="stat-grid">
-              <div className="stat-box">
-                <div className="stat-label">Latest</div>
-                <div className="stat-value">{latest ? `${Number(latest.weight).toFixed(1)} lbs` : '—'}</div>
-              </div>
-              <div className="stat-box">
-                <div className="stat-label">7-Day Avg</div>
-                <div className="stat-value">{avg7 ? `${avg7.toFixed(1)} lbs` : '—'}</div>
-              </div>
-            </div>
-
-            {goalWeight && (
-              <div style={{ marginBottom: 14 }}>
-                <div className="card-title" style={{ marginBottom: 8 }}>
-                  Progress to {goalWeight} lbs
-                </div>
-                <div style={{ height: 8, background: 'var(--bg6)', borderRadius: 6, overflow: 'hidden' }}>
-                  <div
-                    style={{
-                      height: '100%',
-                      width: `${progressPct ?? 0}%`,
-                      background: 'linear-gradient(90deg, var(--v3), var(--v), #00cba9)',
-                      borderRadius: 6,
-                      transition: 'width .5s ease',
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-
-            <form onSubmit={logWeight} className="weight-row">
-              <input
-                type="number"
-                step="0.1"
-                placeholder="231.0"
-                value={weightInput}
-                onChange={(e) => setWeightInput(e.target.value)}
-              />
-              <button className="btn-small" type="submit" disabled={weightBusy} style={{ flexShrink: 0 }}>
-                {weightBusy ? 'Logging…' : 'Log Weight'}
-              </button>
-            </form>
-
-            <div className="log-list">
-              {weights.length === 0 && <div className="empty-state">No weigh-ins yet.</div>}
-              {weights.map((w) => (
-                <div className="log-row" key={w.id}>
-                  <span className="date">{w.log_date}</span>
-                  <span className="val">{Number(w.weight).toFixed(1)} lbs</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-
-      {tab === 'nutrition' && (
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title" style={{ marginBottom: 0 }}>Nutrition Targets</span>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                className={`tab-btn ${dayType === 'training' ? 'active' : ''}`}
-                style={{ fontSize: 11, padding: '5px 10px' }}
-                onClick={() => setDayType('training')}
-              >
-                Training
-              </button>
-              <button
-                className={`tab-btn ${dayType === 'rest' ? 'active' : ''}`}
-                style={{ fontSize: 11, padding: '5px 10px' }}
-                onClick={() => setDayType('rest')}
-              >
-                Rest
-              </button>
-            </div>
-          </div>
-
-          {!nutritionPlan && (
-            <div className="empty-state">
-              <div className="icon">🍽️</div>
-              Your coach hasn't assigned a nutrition plan yet.
-            </div>
-          )}
-
-          {nutritionPlan && (
-            <div className="macro-row">
-              <div className="macro-chip">
-                <div className="v">{dayType === 'training' ? nutritionPlan.training_cal : nutritionPlan.rest_cal}</div>
-                <div className="l">kcal</div>
-              </div>
-              <div className="macro-chip">
-                <div className="v" style={{ color: 'var(--v2)' }}>
-                  {dayType === 'training' ? nutritionPlan.training_protein : nutritionPlan.rest_protein}g
-                </div>
-                <div className="l">protein</div>
-              </div>
-              <div className="macro-chip">
-                <div className="v" style={{ color: 'var(--g)' }}>
-                  {dayType === 'training' ? nutritionPlan.training_carbs : nutritionPlan.rest_carbs}g
-                </div>
-                <div className="l">carbs</div>
-              </div>
-              <div className="macro-chip">
-                <div className="v" style={{ color: 'var(--a)' }}>
-                  {dayType === 'training' ? nutritionPlan.training_fat : nutritionPlan.rest_fat}g
-                </div>
-                <div className="l">fat</div>
-              </div>
-            </div>
-          )}
-
-          {nutritionPlan?.notes && (
-            <div className="muted" style={{ lineHeight: 1.6 }}>{nutritionPlan.notes}</div>
-          )}
-        </div>
-      )}
-
-      {tab === 'training' && (
-        <div className="card">
-          <div className="card-title">{trainingPlan?.name || 'Training Plan'}</div>
-          {!trainingPlan && (
-            <div className="empty-state">
-              <div className="icon">🏋️</div>
-              Your coach hasn't assigned a training plan yet.
-            </div>
-          )}
-          {trainingPlan && (
-            <div>
-              {(trainingPlan.split_json || []).map((day, i) => (
-                <div key={i} style={{ marginBottom: 16 }}>
-                  <div className="split-day" style={{ borderBottom: 'none', paddingBottom: 6 }}>
-                    <span style={{ fontWeight: 800, fontSize: 14 }}>{day.day}</span>
-                    <span className="muted">{day.exercises?.length || 0} exercises</span>
-                  </div>
-                  {(day.exercises || []).map((ex, j) => (
-                    <div className="exercise-row" key={j}>
-                      <div className="name">{ex.name}</div>
-                      <div className="meta">{ex.sets} × {ex.reps} reps</div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {tab === 'photos' && (
-        <div className="card">
-          <div className="card-title">Progress Photos</div>
-          <div className="photo-grid">
-            {ANGLES.map((angle) => {
-              const latestPhoto = photos[angle]?.[0]
-              return (
-                <div key={angle}>
-                  <label className="photo-slot">
-                    {latestPhoto ? (
-                      <img src={latestPhoto.url} alt={angle} />
-                    ) : (
-                      <div className="placeholder">
-                        <div className="icon">📸</div>
-                        Add
-                      </div>
-                    )}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handlePhotoUpload(angle, e.target.files?.[0])}
-                    />
-                  </label>
-                  <div className="photo-angle-label">{angle}</div>
-                </div>
-              )
-            })}
-          </div>
-          {photoBusy && <div className="muted">Uploading…</div>}
-          {photoError && <div className="error-text">{photoError}</div>}
-          <div className="muted" style={{ marginTop: 10 }}>
-            Tap a photo slot to upload. Same lighting, same pose, every time — that's what makes photos useful.
-          </div>
-        </div>
-      )}
+      <BottomNav active={activeNav} onChange={setActiveNav} />
     </div>
   )
 }

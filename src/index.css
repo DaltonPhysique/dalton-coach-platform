@@ -214,3 +214,229 @@ a { color: var(--v2); text-decoration: none; }
 .exercise-row .meta { font-size: 11px; color: var(--text3); margin-top: 2px; font-weight: 500; }
 .remove-x { background: none; color: var(--text3); font-size: 18px; padding: 0 6px; }
 .remove-x:hover { color: var(--r); }
+
+/* ════════════════════════════════════════════
+   V2 CLIENT APP — additive styles only.
+   Nothing above this line is modified.
+════════════════════════════════════════════ */
+
+/* ---------- App header (logo + version + phase pill) ---------- */
+.v2-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 0 6px;
+}
+.v2-logo-row { display: flex; align-items: center; gap: 11px; }
+.v2-logo-icon {
+  width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--v3), var(--v));
+  display: flex; align-items: center; justify-content: center;
+}
+.v2-logo-icon svg { width: 19px; height: 19px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.v2-logo-name { font-size: 18px; font-weight: 800; letter-spacing: -.4px; line-height: 1.15; }
+.v2-logo-sub { font-size: 10.5px; font-weight: 600; letter-spacing: 1.6px; text-transform: uppercase; color: var(--text3); margin-top: 1px; }
+.v2-header-badges { display: flex; align-items: center; gap: 8px; }
+.v2-badge-version {
+  font-size: 12px; font-weight: 700; color: var(--v2); background: var(--vbg);
+  border: 1px solid var(--vbrd); padding: 5px 13px; border-radius: 20px;
+}
+.v2-badge-phase {
+  font-size: 11px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--g); background: var(--gbg); border: 1px solid var(--gbrd);
+  padding: 6px 14px; border-radius: 20px;
+}
+
+/* ---------- Page title ---------- */
+.v2-page-title { font-size: 34px; font-weight: 800; letter-spacing: -1px; margin: 14px 0 4px; line-height: 1.1; }
+.v2-page-sub { font-size: 14px; color: var(--text2); font-weight: 500; margin-bottom: 18px; }
+
+/* ---------- Bottom nav: 9 items, smaller to fit ---------- */
+.v2-nav-bar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+  display: flex; justify-content: space-between;
+  background: rgba(6,7,9,.94); backdrop-filter: blur(20px);
+  border-top: 1px solid var(--border);
+  padding: 9px 4px calc(9px + env(safe-area-inset-bottom, 0px));
+  overflow-x: auto;
+}
+.v2-nav-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: none; border: none; padding: 4px 6px; flex: 1; min-width: 46px;
+  color: var(--text3); font-size: 9px; font-weight: 700; letter-spacing: .2px; text-transform: uppercase;
+}
+.v2-nav-item svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.v2-nav-item.active { color: var(--v2); }
+.v2-nav-item.active svg { stroke: var(--v2); }
+
+/* ---------- Sub-tab pill bar (used inside Body / Progress / Fuel / Train) ---------- */
+.v2-subtabs { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 16px; padding-bottom: 2px; }
+.v2-subtabs::-webkit-scrollbar { display: none; }
+.v2-subtab {
+  padding: 11px 20px; border-radius: 24px; background: var(--bg4);
+  color: var(--text2); font-size: 14px; font-weight: 600; white-space: nowrap; border: none;
+}
+.v2-subtab.active { background: var(--v); color: #fff; }
+
+/* ---------- Card title row with trailing action ---------- */
+.v2-card-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.v2-card-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text3); }
+
+/* ---------- Home: weight hero ---------- */
+.v2-weight-hero-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; }
+.v2-weight-big { font-size: 52px; font-weight: 800; letter-spacing: -2px; line-height: 1; }
+.v2-weight-unit { font-size: 22px; font-weight: 500; color: var(--text2); }
+.v2-weight-date { font-size: 13px; color: var(--text3); font-weight: 600; margin-top: 6px; letter-spacing: .3px; text-transform: uppercase; }
+.v2-avg-big { font-size: 36px; font-weight: 800; color: var(--g); letter-spacing: -1.5px; text-align: right; line-height: 1; }
+.v2-avg-label { font-size: 12px; color: var(--text3); font-weight: 600; text-align: right; margin-top: 6px; letter-spacing: .3px; text-transform: uppercase; }
+.v2-goal-track { height: 9px; background: var(--bg6); border-radius: 8px; overflow: hidden; margin: 12px 0 10px; }
+.v2-goal-fill { height: 100%; border-radius: 8px; background: linear-gradient(90deg, var(--v3), var(--v), #00cba9); transition: width .6s ease; }
+.v2-goal-endpoints { display: flex; justify-content: space-between; font-size: 13px; color: var(--text3); font-weight: 600; }
+.v2-goal-remaining { font-size: 13px; color: var(--text3); font-weight: 600; margin-top: 10px; }
+
+/* ---------- Today's targets toggle pills ---------- */
+.v2-daytoggle { display: flex; gap: 8px; }
+.v2-daytoggle button {
+  padding: 9px 18px; border-radius: 22px; background: var(--bg4); color: var(--text2);
+  font-size: 14px; font-weight: 600; border: none;
+}
+.v2-daytoggle button.active { background: var(--v); color: #fff; }
+
+/* ---------- Macro box row (4 across, used on Home + Fuel) ---------- */
+.v2-macro-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 16px; }
+.v2-macro-grid.v2-macro-2 { grid-template-columns: repeat(2, 1fr); }
+.v2-macro-grid.v2-macro-3 { grid-template-columns: repeat(3, 1fr); }
+.v2-macro-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 14px; padding: 16px 10px; text-align: left; }
+.v2-macro-box .label { font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--text3); margin-bottom: 6px; }
+.v2-macro-box .value { font-size: 26px; font-weight: 800; letter-spacing: -.5px; }
+.v2-macro-box .sub { font-size: 12px; color: var(--text3); font-weight: 600; margin-left: 2px; }
+
+/* ---------- Recovery ring (Home snapshot) ---------- */
+.v2-recovery-row { display: flex; align-items: center; gap: 18px; }
+.v2-ring-wrap { position: relative; width: 86px; height: 86px; flex-shrink: 0; }
+.v2-ring-wrap svg { width: 86px; height: 86px; transform: rotate(-90deg); }
+.v2-ring-track { fill: none; stroke: var(--bg6); stroke-width: 8; }
+.v2-ring-fill { fill: none; stroke-width: 8; stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
+.v2-ring-label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.v2-ring-num { font-size: 26px; font-weight: 800; line-height: 1; }
+.v2-ring-den { font-size: 11px; color: var(--text3); font-weight: 700; }
+.v2-recovery-status { font-size: 19px; font-weight: 800; margin-bottom: 4px; }
+.v2-recovery-sub { font-size: 13.5px; color: var(--text2); font-weight: 500; }
+.v2-recovery-warning { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--a); font-weight: 700; margin-top: 8px; }
+
+/* ---------- Insight / coaching note card ---------- */
+.v2-insight-bar {
+  border-left: 3px solid var(--v); background: var(--vbg); border-radius: 0 14px 14px 0;
+  padding: 16px 18px; font-size: 14px; line-height: 1.6; color: var(--text2);
+}
+.v2-insight-bar strong { color: var(--text); font-weight: 700; }
+.v2-insight-bar.green { border-color: var(--g); background: var(--gbg); }
+.v2-insight-bar.amber { border-color: var(--a); background: var(--abg); }
+.v2-insight-bar.red { border-color: var(--r); background: var(--rbg); }
+
+/* ---------- Insights screen: status cards ---------- */
+.v2-status-pill {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800;
+  letter-spacing: .4px; text-transform: uppercase; padding: 6px 14px; border-radius: 20px; margin-bottom: 14px;
+}
+.v2-status-pill.ok { background: var(--gbg); color: var(--g); border: 1px solid var(--gbrd); }
+.v2-status-pill.critical { background: var(--rbg); color: var(--r); border: 1px solid var(--rbrd); }
+.v2-status-pill.info { background: var(--vbg); color: var(--v2); border: 1px solid var(--vbrd); }
+.v2-insight-headline { font-size: 19px; font-weight: 800; margin-bottom: 10px; letter-spacing: -.3px; }
+.v2-insight-body { font-size: 14.5px; color: var(--text2); line-height: 1.65; font-weight: 500; }
+
+/* ---------- Physique scorecard ---------- */
+.v2-score-ring-wrap { display: flex; justify-content: center; padding: 12px 0 22px; }
+.v2-score-ring { position: relative; width: 180px; height: 180px; }
+.v2-score-ring svg { width: 180px; height: 180px; transform: rotate(-90deg); }
+.v2-score-track { fill: none; stroke: var(--bg6); stroke-width: 12; }
+.v2-score-fill { fill: none; stroke-width: 12; stroke-linecap: round; transition: stroke-dashoffset .8s ease; }
+.v2-score-label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.v2-score-num { font-size: 48px; font-weight: 800; line-height: 1; letter-spacing: -1px; }
+.v2-score-den { font-size: 15px; color: var(--text3); font-weight: 600; margin-top: 2px; }
+.v2-score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+.v2-score-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+.v2-score-box .label { font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--text3); margin-bottom: 8px; }
+.v2-score-box .value { font-size: 28px; font-weight: 800; }
+.v2-score-box .value .of { font-size: 14px; color: var(--text3); font-weight: 600; }
+.v2-score-bar { height: 5px; background: var(--bg6); border-radius: 4px; overflow: hidden; margin-top: 10px; }
+.v2-score-bar-fill { height: 100%; border-radius: 4px; }
+
+/* ---------- Recovery sliders (matched to screenshot glow style) ---------- */
+.v2-slider-row { margin-bottom: 26px; }
+.v2-slider-label-row { display: flex; justify-content: space-between; margin-bottom: 14px; }
+.v2-slider-label { font-size: 16px; font-weight: 600; }
+.v2-slider-value { font-size: 19px; font-weight: 800; }
+.v2-slider-track-labels { display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: var(--text3); font-weight: 500; }
+.v2-glow-slider { -webkit-appearance: none; width: 100%; height: 4px; border-radius: 4px; background: var(--bg6); outline: none; }
+.v2-glow-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--v); cursor: pointer; box-shadow: 0 0 0 8px var(--vbg), 0 0 16px rgba(124,110,245,.5);
+}
+.v2-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 16px 0 4px; }
+.v2-toggle { position: relative; width: 50px; height: 30px; }
+.v2-toggle input { opacity: 0; width: 0; height: 0; }
+.v2-toggle-track {
+  position: absolute; inset: 0; background: var(--bg6); border-radius: 16px; cursor: pointer; transition: background .2s;
+}
+.v2-toggle-track::before {
+  content: ''; position: absolute; width: 24px; height: 24px; left: 3px; top: 3px;
+  background: var(--text3); border-radius: 50%; transition: transform .2s;
+}
+.v2-toggle input:checked + .v2-toggle-track { background: var(--v); }
+.v2-toggle input:checked + .v2-toggle-track::before { transform: translateX(20px); background: #fff; }
+
+/* ---------- PR / Logbook entries ---------- */
+.v2-entry-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 10px; }
+.v2-entry-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.v2-entry-date { font-size: 12.5px; color: var(--text3); font-weight: 600; }
+.v2-entry-tag { font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 7px; letter-spacing: .3px; }
+.v2-entry-tag.lower { background: var(--gbg); color: var(--g); border: 1px solid var(--gbrd); }
+.v2-entry-tag.upper { background: var(--vbg); color: var(--v2); border: 1px solid var(--vbrd); }
+.v2-entry-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.v2-entry-meta { font-size: 13.5px; color: var(--text3); font-weight: 600; }
+
+/* ---------- Exercise list rows (Train screen) ---------- */
+.v2-ex-row { background: var(--bg3); border: 1px solid var(--border); border-radius: 16px; padding: 16px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+.v2-ex-left { display: flex; align-items: center; gap: 14px; }
+.v2-ex-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.v2-ex-name { font-size: 16px; font-weight: 700; }
+.v2-ex-meta { font-size: 13px; color: var(--text3); font-weight: 500; margin-top: 2px; }
+.v2-ex-tag { font-size: 12px; font-weight: 700; padding: 5px 13px; border-radius: 18px; white-space: nowrap; }
+.v2-ex-tag.fail { background: var(--rbg); color: var(--r); }
+.v2-ex-tag.near { background: var(--abg); color: var(--a); }
+.v2-ex-tag.warmup { background: var(--gbg); color: var(--g); }
+
+/* ---------- Demo data badge — used wherever a screen is UI-only ---------- */
+.v2-demo-badge {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700;
+  color: var(--text3); background: var(--bg4); border: 1px solid var(--border2);
+  padding: 5px 12px; border-radius: 16px; margin-bottom: 14px; letter-spacing: .2px;
+}
+.v2-demo-badge::before { content: '●'; color: var(--a); font-size: 8px; }
+
+/* ---------- Supplement / priority list rows (System) ---------- */
+.v2-priority-row { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.v2-priority-row:last-child { border-bottom: none; }
+.v2-priority-num {
+  width: 34px; height: 34px; border-radius: 12px; background: var(--vbg); border: 1px solid var(--vbrd);
+  color: var(--v2); font-size: 15px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.v2-priority-info { flex: 1; }
+.v2-priority-name { font-size: 16px; font-weight: 700; }
+.v2-priority-note { font-size: 13px; color: var(--text3); font-weight: 500; margin-top: 2px; }
+.v2-priority-bar-track { width: 70px; height: 4px; background: var(--bg6); border-radius: 4px; overflow: hidden; }
+.v2-priority-bar-fill { height: 100%; background: linear-gradient(90deg, var(--v3), var(--v2)); border-radius: 4px; }
+.v2-supp-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.v2-supp-tag { font-size: 11px; font-weight: 800; padding: 5px 13px; border-radius: 8px; letter-spacing: .3px; white-space: nowrap; }
+.v2-supp-tag.core { background: var(--rbg); color: var(--r); border: 1px solid var(--rbrd); }
+.v2-supp-tag.add { background: var(--abg); color: var(--a); border: 1px solid var(--abrd); }
+.v2-supp-tag.good { background: var(--bg5); color: var(--text3); border: 1px solid var(--border2); }
+
+/* ---------- Checklist (Home) ---------- */
+.v2-check-row { display: flex; align-items: center; gap: 14px; padding: 13px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+.v2-check-row:last-child { border-bottom: none; }
+.v2-checkbox { width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--border2); flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all .15s; }
+.v2-checkbox.done { background: var(--v); border-color: var(--v); }
+.v2-checkbox.done::after { content: '✓'; color: #fff; font-size: 13px; font-weight: 800; }
+.v2-check-text { font-size: 14.5px; font-weight: 500; color: var(--text2); }
+.v2-check-text.done { color: var(--text3); text-decoration: line-through; }
+
