@@ -160,7 +160,6 @@ export default function HomeScreen({
           <div>
             <div className="v2-recovery-status" style={{ color: ringColor }}>{statusLabel}</div>
             <div className="v2-recovery-sub">Take every set to failure today.</div>
-            <div className="v2-recovery-warning">⚠ Check hormone signals</div>
           </div>
         </div>
       </div>
