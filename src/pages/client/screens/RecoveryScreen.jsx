@@ -56,18 +56,6 @@ export default function RecoveryScreen() {
             </div>
           </div>
         ))}
-
-        <div className="v2-toggle-row">
-          <span style={{ fontSize: 16, fontWeight: 600 }}>Morning erections present?</span>
-          <label className="v2-toggle">
-            <input
-              type="checkbox"
-              checked={values.morningSignal}
-              onChange={(e) => setValues({ ...values, morningSignal: e.target.checked })}
-            />
-            <span className="v2-toggle-track" />
-          </label>
-        </div>
       </div>
 
       <div className="card" style={{ background: 'var(--gbg)', borderColor: 'var(--gbrd)' }}>
@@ -80,12 +68,6 @@ export default function RecoveryScreen() {
             : 'Solid recovery. Train normally, but stay attentive to how sets feel.'}
         </p>
       </div>
-
-      {!values.morningSignal && (
-        <div className="card" style={{ background: 'var(--abg)', borderColor: 'var(--abrd)' }}>
-          ⚠️ No morning erection noted. Hormone signal. If persists 3+ days: check sleep, calories, stress. Do not cut further until resolved.
-        </div>
-      )}
 
       <div className="card">
         <div className="v2-card-eyebrow" style={{ marginBottom: 14 }}>Recovery Log</div>
