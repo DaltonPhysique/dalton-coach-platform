@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { supabase } from '../../../lib/supabase'
 import { DEMO_RECOVERY_TODAY } from '../demoData'
 
-const CHECKLIST_ITEMS = [
+const DEFAULT_CHECKLIST = [
   'Black coffee — cortisol prime',
   'Weigh in (post-void, pre-coffee) + log weight',
   'Score daily recovery (sleep, energy, soreness)',
@@ -29,6 +30,20 @@ export default function HomeScreen({
   setDayType,
 }) {
   const [checked, setChecked] = useState({})
+  const [items, setItems] = useState(DEFAULT_CHECKLIST)
+
+  useEffect(() => {
+    async function loadChecklist() {
+      if (!profile?.id) return
+      const { data } = await supabase
+        .from('checklist_items').select('text')
+        .eq('client_id', profile.id)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true })
+      if (data && data.length > 0) setItems(data.map(r => r.text))
+    }
+    loadChecklist()
+  }, [profile?.id])
   const score = recoveryScore(DEMO_RECOVERY_TODAY)
   const scoreFrac = score / 25
   const circ = 2 * Math.PI * 38
@@ -150,13 +165,13 @@ export default function HomeScreen({
         </div>
       </div>
 
-      {/* Daily checklist — DEMO/local only, not backed by a table */}
+      {/* Daily checklist — coach-customizable via checklist_items table */}
       <div className="card">
         <div className="v2-card-title-row">
           <span className="v2-card-eyebrow">Daily Checklist</span>
           <button className="btn-small" onClick={() => setChecked({})}>Reset</button>
         </div>
-        {CHECKLIST_ITEMS.map((text, i) => (
+        {items.map((text, i) => (
           <div className="v2-check-row" key={i} onClick={() => setChecked((c) => ({ ...c, [i]: !c[i] }))}>
             <div className={`v2-checkbox ${checked[i] ? 'done' : ''}`} />
             <div className={`v2-check-text ${checked[i] ? 'done' : ''}`}>{text}</div>
