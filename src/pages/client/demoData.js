@@ -43,11 +43,6 @@ export const DEMO_INSIGHTS = [
     body: "Your body is adapting well. This is the signature of a well-executed cut: performance protected, recovery maintained.",
   },
   {
-    status: 'critical',
-    headline: 'Hormone signal: Morning erections absent 3+ days',
-    body: 'This is the clearest early warning sign of hormonal suppression — usually from excessive calorie restriction or high cortisol. Do NOT cut calories further. Prioritize sleep, carbohydrates, and stress management.',
-  },
-  {
     status: 'ok',
     headline: '1 PR in the last 30 days 🏆',
     body: "PRs while in a deficit = the best possible outcome. You're losing fat and building or maintaining strength simultaneously. This is textbook recomp. Keep the exact approach.",
