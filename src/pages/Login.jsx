@@ -51,7 +51,7 @@ export default function Login() {
     <div className="center-screen">
       <div className="auth-card">
         <div className="auth-logo">
-          <div className="name">Dalton Physique OS</div>
+          <div className="name">The Rebuild</div>
           <div className="sub">Coach Platform</div>
         </div>
 
