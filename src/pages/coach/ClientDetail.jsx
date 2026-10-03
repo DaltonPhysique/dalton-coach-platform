@@ -53,10 +53,13 @@ export default function ClientDetail() {
   const [notes,       setNotes]      = useState([])
   const [noteText,    setNoteText]   = useState('')
   const [noteBusy,    setNoteBusy]   = useState(false)
+  const [checklist,   setChecklist]  = useState([])
+  const [checklistText, setChecklistText] = useState('')
+  const [checklistBusy, setChecklistBusy] = useState(false)
 
   useEffect(() => {
     loadClient(); loadWeights(); loadPhotos(); loadNutritionPlan(); loadTrainingPlan()
-    loadStats(); loadRecLogs(); loadNotes()
+    loadStats(); loadRecLogs(); loadNotes(); loadChecklist()
   }, [clientId])
 
   // ── existing loaders (all preserved verbatim) ──────────────────────────────
@@ -214,6 +217,30 @@ export default function ClientDetail() {
     loadNotes()
   }
 
+  async function loadChecklist() {
+    const { data } = await supabase
+      .from('checklist_items').select('*').eq('client_id', clientId)
+      .order('sort_order', { ascending: true }).order('created_at', { ascending: true })
+    setChecklist(data || [])
+  }
+  async function addChecklistItem(e) {
+    e.preventDefault()
+    if (!checklistText.trim()) return
+    setChecklistBusy(true)
+    await supabase.from('checklist_items').insert({
+      client_id: clientId,
+      text: checklistText.trim(),
+      sort_order: checklist.length,
+    })
+    setChecklistText('')
+    setChecklistBusy(false)
+    loadChecklist()
+  }
+  async function deleteChecklistItem(id) {
+    await supabase.from('checklist_items').delete().eq('id', id)
+    loadChecklist()
+  }
+
   // ── derived ────────────────────────────────────────────────────────────────
   const latest = weights[0]
   const avg7   = weights.length ? weights.slice(0,7).reduce((a,w)=>a+Number(w.weight),0)/Math.min(weights.length,7) : null
@@ -236,6 +263,7 @@ export default function ClientDetail() {
     { id: 'photos',    label: 'Photos'    },
     { id: 'nutrition', label: 'Nutrition' },
     { id: 'training',  label: 'Training'  },
+    { id: 'checklist', label: 'Checklist' },
   ]
 
   function sliderInput(key, label, low, high) {
@@ -656,6 +684,44 @@ export default function ClientDetail() {
               </div>
             </form>
           </div>
+        )}
+
+        {/* ══════ CHECKLIST TAB ══════ */}
+        {tab === 'checklist' && (
+          <>
+            <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: '22px 24px', marginBottom: 16 }}>
+              <div style={{ ...EYEBROW, marginBottom: 14 }}>Add Checklist Item</div>
+              <form onSubmit={addChecklistItem} style={{ display: 'flex', gap: 10 }}>
+                <input
+                  value={checklistText}
+                  onChange={e => setChecklistText(e.target.value)}
+                  placeholder="e.g. 10-minute walk after dinner"
+                  style={{ flex: 1 }}
+                />
+                <button className="btn-primary" type="submit" disabled={checklistBusy} style={{ maxWidth: 140 }}>
+                  {checklistBusy ? 'Adding…' : 'Add Item'}
+                </button>
+              </form>
+              <p className="muted" style={{ marginTop: 12, fontSize: 13 }}>
+                This is what appears on {client?.full_name?.split(' ')[0] || 'the client'}'s home screen. Leave it empty to show the default checklist.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {checklist.length === 0 && (
+                <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: '48px', textAlign: 'center', color: 'var(--text3)', fontSize: 14 }}>
+                  No custom items yet. The client sees the default checklist.
+                </div>
+              )}
+              {checklist.map((item, i) => (
+                <div key={item.id} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 14, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <span style={{ color: 'var(--text3)', fontWeight: 800, fontSize: 13, minWidth: 24 }}>{i + 1}</span>
+                  <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{item.text}</span>
+                  <button onClick={() => deleteChecklistItem(item.id)} style={{ background: 'var(--rbg)', border: '1px solid var(--rbrd)', color: 'var(--r)', borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>Remove</button>
+                </div>
+              ))}
+            </div>
+          </>
         )}
 
       </div>
