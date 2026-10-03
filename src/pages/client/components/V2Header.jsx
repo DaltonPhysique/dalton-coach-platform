@@ -7,7 +7,7 @@ export default function V2Header({ fullName }) {
         </div>
         <div>
           <div className="v2-logo-name">{fullName || 'Dalton'}</div>
-          <div className="v2-logo-sub">Physique OS</div>
+          <div className="v2-logo-sub">The Rebuild</div>
         </div>
       </div>
       <div className="v2-header-badges">
