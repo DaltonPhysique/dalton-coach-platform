@@ -25,7 +25,7 @@ export default function BodyScreen({ photos, photoBusy, photoError, onPhotoUploa
       {tab === 'scorecard' && (
         <div className="card">
           <DemoBadge label="Demo data — scorecard not yet connected" />
-          <div className="v2-card-eyebrow">Physique Score</div>
+          <div className="v2-card-eyebrow">Rebuild Score</div>
           <div className="v2-score-ring-wrap">
             <div className="v2-score-ring">
               <svg viewBox="0 0 180 180">
