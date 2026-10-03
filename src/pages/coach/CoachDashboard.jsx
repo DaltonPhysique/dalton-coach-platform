@@ -211,7 +211,7 @@ export default function CoachDashboard() {
               </svg>
             </div>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-.3px', lineHeight: 1.2 }}>Physique OS</div>
+              <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-.3px', lineHeight: 1.2 }}>The Rebuild</div>
               <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.8px', textTransform: 'uppercase', color: 'var(--text3)' }}>Coach Portal</div>
             </div>
           </div>
@@ -247,7 +247,7 @@ export default function CoachDashboard() {
               color: showForm ? 'var(--text2)' : '#fff',
               border: showForm ? '1px solid var(--border2)' : 'none',
               borderRadius: 11, padding: '11px 22px', fontSize: 14, fontWeight: 800,
-              boxShadow: showForm ? 'none' : '0 4px 20px rgba(124,110,245,.35)', flexShrink: 0,
+              boxShadow: showForm ? 'none' : '0 4px 20px rgba(196,154,88,.35)', flexShrink: 0,
             }}
           >
             {showForm ? '✕ Cancel' : '+ New Client'}
