@@ -24,7 +24,7 @@ export default function SystemScreen() {
       <div className="v2-page-title">System</div>
 
       <div className="card">
-        <div className="v2-card-eyebrow" style={{ marginBottom: 4 }}>Physique Priorities</div>
+        <div className="v2-card-eyebrow" style={{ marginBottom: 4 }}>Rebuild Priorities</div>
         {PRIORITIES.map((p) => (
           <div className="v2-priority-row" key={p.num}>
             <div className="v2-priority-num">{p.num}</div>
