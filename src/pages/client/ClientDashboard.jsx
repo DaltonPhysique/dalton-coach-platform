@@ -40,12 +40,15 @@ export default function ClientDashboard() {
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoError, setPhotoError] = useState('')
 
+  const [phase, setPhase] = useState('')
+
   useEffect(() => {
     if (!profile) return
     loadWeights()
     loadNutritionPlan()
     loadTrainingPlan()
     loadPhotos()
+    loadPhase()
   }, [profile])
 
   async function loadWeights() {
@@ -97,6 +100,15 @@ export default function ClientDashboard() {
       grouped[p.angle]?.push({ ...p, url: signed?.signedUrl })
     }
     setPhotos(grouped)
+  }
+
+  async function loadPhase() {
+    const { data, error } = await supabase
+      .from('coach_client_stats')
+      .select('current_phase')
+      .eq('client_id', profile.id)
+      .maybeSingle()
+    if (!error && data?.current_phase) setPhase(data.current_phase)
   }
 
   async function logWeight(e) {
@@ -155,7 +167,7 @@ export default function ClientDashboard() {
 
   return (
     <div className="app-shell" style={{ paddingBottom: 110 }}>
-      <V2Header fullName={profile?.full_name} />
+      <V2Header fullName={profile?.full_name} phase={phase} />
 
       {activeNav === 'home' && (
         <HomeScreen
