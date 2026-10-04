@@ -89,6 +89,7 @@ export default function CoachDashboard() {
   const [password,    setPassword]    = useState('')
   const [startWeight, setStartWeight] = useState('')
   const [goalWeight,  setGoalWeight]  = useState('')
+  const [phase,       setPhase]       = useState('Cut')
   const [busy,        setBusy]        = useState(false)
   const [error,       setError]       = useState('')
   const [info,        setInfo]        = useState('')
@@ -174,15 +175,21 @@ export default function CoachDashboard() {
 
   async function createClient(e) {
     e.preventDefault(); setError(''); setInfo(''); setBusy(true)
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email, password,
       options: { data: { role: 'client', full_name: fullName, coach_id: profile.id,
         start_weight: startWeight || null, goal_weight: goalWeight || null } },
     })
+    if (signUpError) { setBusy(false); setError(signUpError.message); return }
+    // Seed the client's phase so the app header badge is correct from day one.
+    // (Brand-new clients have no stats row yet, so a plain insert is safe.)
+    const newUserId = signUpData?.user?.id
+    if (newUserId && phase) {
+      await supabase.from('coach_client_stats').insert({ client_id: newUserId, current_phase: phase })
+    }
     setBusy(false)
-    if (signUpError) { setError(signUpError.message); return }
     setInfo(`Account created for ${fullName}. Share their email + password directly.`)
-    setFullName(''); setEmail(''); setPassword(''); setStartWeight(''); setGoalWeight('')
+    setFullName(''); setEmail(''); setPassword(''); setStartWeight(''); setGoalWeight(''); setPhase('Cut')
     setShowForm(false); loadClients()
   }
 
@@ -285,9 +292,18 @@ export default function CoachDashboard() {
                 <div><label style={LBL}>Email</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="client@email.com" /></div>
                 <div><label style={LBL}>Temporary Password</label><input type="text" value={password} onChange={e => setPassword(e.target.value)} minLength={6} required placeholder="Min 6 chars" /></div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 22 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
                 <div><label style={LBL}>Start Weight (lbs)</label><input type="number" step="0.1" value={startWeight} onChange={e => setStartWeight(e.target.value)} placeholder="231.0" /></div>
                 <div><label style={LBL}>Goal Weight (lbs)</label><input type="number" step="0.1" value={goalWeight} onChange={e => setGoalWeight(e.target.value)} placeholder="215.0" /></div>
+              </div>
+              <div style={{ marginBottom: 22 }}>
+                <label style={LBL}>Current Phase / Goal</label>
+                <select value={phase} onChange={e => setPhase(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #3a332a', background: '#17140f', color: '#f2ede4', fontSize: 15 }}>
+                  <option value="Cut">Cut</option>
+                  <option value="Recomp">Recomp</option>
+                  <option value="Lean Bulk">Lean Bulk</option>
+                  <option value="Maintenance">Maintenance</option>
+                </select>
               </div>
               <button className="btn-primary" disabled={busy} type="submit" style={{ maxWidth: 260 }}>
                 {busy ? 'Creating…' : 'Create Client Account'}
