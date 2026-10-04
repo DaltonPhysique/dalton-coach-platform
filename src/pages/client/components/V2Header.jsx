@@ -1,4 +1,4 @@
-export default function V2Header({ fullName }) {
+export default function V2Header({ fullName, phase }) {
   return (
     <div className="v2-header">
       <div className="v2-logo-row">
@@ -11,8 +11,7 @@ export default function V2Header({ fullName }) {
         </div>
       </div>
       <div className="v2-header-badges">
-        <span className="v2-badge-version">V2</span>
-        <span className="v2-badge-phase">Recomp Cut</span>
+        {phase ? <span className="v2-badge-phase">{phase}</span> : null}
       </div>
     </div>
   )
