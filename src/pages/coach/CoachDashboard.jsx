@@ -27,6 +27,36 @@ function sparkColor(delta) {
   return delta <= 0 ? 'var(--g)' : 'var(--r)'
 }
 
+// ─── compute traffic-light status for one client (7-day window) ─────────────
+function weekAgoStr() {
+  return new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10)
+}
+function distinctDays(rows, key) {
+  const cutoff = weekAgoStr()
+  return new Set((rows || []).filter(r => r[key] >= cutoff).map(r => r[key])).size
+}
+function computeStatus(c) {
+  const signals = []
+  // Weigh-in frequency
+  const weighDays = distinctDays(c.wlogs, 'log_date')
+  if (c.wlogs?.length) signals.push(Math.min(1, weighDays / 7))
+  // Checklist completion rate
+  if (c.checkItemCount > 0 && c.completions) {
+    signals.push(Math.min(1, c.completions.length / (c.checkItemCount * 7)))
+  }
+  // Recovery log frequency
+  const recDays = distinctDays(c.recLogs, 'log_date')
+  if (c.recLogs?.length) signals.push(Math.min(1, recDays / 7))
+
+  if (!signals.length) return { level: 'nodata', score: null, label: 'No data yet' }
+  const score = signals.reduce((a, s) => a + s, 0) / signals.length
+  const level = score >= 0.8 ? 'green' : score >= 0.5 ? 'amber' : 'red'
+  const label = level === 'green' ? 'On track' : level === 'amber' ? 'Needs attention' : 'At risk'
+  return { level, score, label }
+}
+const STATUS_ORDER = { red: 0, amber: 1, green: 2, nodata: 3 }
+const STATUS_DOT = { red: 'var(--r)', amber: 'var(--a)', green: 'var(--g)', nodata: 'var(--text3)' }
+
 // ─── compute alert flags for one client ──────────────────────────────────────
 function computeAlerts(c) {
   const alerts = []
@@ -120,6 +150,20 @@ export default function CoachDashboard() {
         .from('coach_client_stats').select('*')
         .eq('client_id', c.id).maybeSingle()
 
+      // Checklist completions (7 days) + item count — graceful if table missing
+      let completions = null
+      let checkItemCount = 0
+      try {
+        const { data: comp } = await supabase
+          .from('checklist_completions').select('completed_date')
+          .eq('client_id', c.id).gte('completed_date', weekAgoStr())
+        completions = comp || []
+        const { count } = await supabase
+          .from('checklist_items').select('id', { count: 'exact', head: true })
+          .eq('client_id', c.id)
+        checkItemCount = count || 0
+      } catch { /* table missing — checklist signal skipped */ }
+
       // Active nutrition plan
       const { data: nutPlan } = await supabase
         .from('nutrition_plans').select('training_cal, rest_cal')
@@ -156,13 +200,18 @@ export default function CoachDashboard() {
         avgRec,
         avgMot,
         lastWeight: sorted[0] ?? null,
+        completions,
+        checkItemCount,
       }
       enrichedClient.alerts = computeAlerts(enrichedClient)
+      enrichedClient.status = computeStatus(enrichedClient)
       return enrichedClient
     }))
 
-    // Sort by alert count descending (highest priority first)
+    // Sort by traffic-light status first (at-risk on top), then alert priority
     enriched.sort((a, b) => {
+      const s = STATUS_ORDER[a.status.level] - STATUS_ORDER[b.status.level]
+      if (s !== 0) return s
       const aRed = a.alerts.filter(x => x.severity === 'red').length
       const bRed = b.alerts.filter(x => x.severity === 'red').length
       if (bRed !== aRed) return bRed - aRed
@@ -204,6 +253,11 @@ export default function CoachDashboard() {
     .map(c => ({ name: c.full_name, id: c.id, ...c.lastWeight }))
     .sort((a, b) => b.log_date.localeCompare(a.log_date))
     .slice(0, 6)
+  const statusCounts = {
+    green: clients.filter(c => c.status?.level === 'green').length,
+    amber: clients.filter(c => c.status?.level === 'amber').length,
+    red:   clients.filter(c => c.status?.level === 'red').length,
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
@@ -244,6 +298,21 @@ export default function CoachDashboard() {
             <div style={{ fontSize: 14, color: 'var(--text2)', marginTop: 5, fontWeight: 500 }}>
               {loading ? 'Loading roster…' : `${activeCount} ${activeCount === 1 ? 'client' : 'clients'} · ${totalAlerts} active alert${totalAlerts !== 1 ? 's' : ''}`}
             </div>
+            {!loading && activeCount > 0 && (
+              <div style={{ display: 'flex', gap: 14, marginTop: 10 }}>
+                {[
+                  { n: statusCounts.green, label: 'on track', dot: 'var(--g)' },
+                  { n: statusCounts.amber, label: 'needs attention', dot: 'var(--a)' },
+                  { n: statusCounts.red, label: 'at risk', dot: 'var(--r)' },
+                ].map(s => (
+                  <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <div style={{ width: 9, height: 9, borderRadius: '50%', background: s.dot, boxShadow: `0 0 8px ${s.dot}` }} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>{s.n}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 500 }}>{s.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <button
             onClick={() => { setShowForm(v => !v); setError(''); setInfo('') }}
@@ -365,16 +434,23 @@ export default function CoachDashboard() {
                             {c.goal_weight ? ` · Goal ${c.goal_weight} lbs` : ''}
                           </div>
                         </div>
-                        {c.alerts.length > 0 && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                          <span
+                            title={c.status.score !== null ? `7-day adherence: ${(c.status.score * 100).toFixed(0)}%` : 'Not enough data yet'}
+                            style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, fontWeight: 800, borderRadius: 7, padding: '4px 10px', border: '1px solid var(--border2)', background: 'var(--bg3)', flexShrink: 0 }}
+                          >
+                            <div style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_DOT[c.status.level], boxShadow: `0 0 8px ${STATUS_DOT[c.status.level]}` }} />
+                            <span style={{ color: 'var(--text2)' }}>{c.status.label}</span>
+                          </span>
+                          {c.alerts.length > 0 && (<>
                             {hasRed && <span style={{ fontSize: 11, fontWeight: 800, background: 'var(--rbg)', color: 'var(--r)', border: '1px solid var(--rbrd)', borderRadius: 7, padding: '4px 9px' }}>
                               ⚠ {c.alerts.filter(a => a.severity === 'red').length} critical
                             </span>}
                             {hasAmber && <span style={{ fontSize: 11, fontWeight: 800, background: 'var(--abg)', color: 'var(--a)', border: '1px solid var(--abrd)', borderRadius: 7, padding: '4px 9px' }}>
                               {c.alerts.filter(a => a.severity === 'amber').length} amber
                             </span>}
-                          </div>
-                        )}
+                          </>)}
+                        </div>
                       </div>
 
                       {/* Alert pills */}
