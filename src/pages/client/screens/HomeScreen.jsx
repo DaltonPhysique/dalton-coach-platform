@@ -18,6 +18,11 @@ function recoveryScore(r) {
   return r.sleep + r.energy + r.soreness + r.stress + r.digestion
 }
 
+function todayStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export default function HomeScreen({
   profile,
   latest,
@@ -40,10 +45,45 @@ export default function HomeScreen({
         .eq('client_id', profile.id)
         .order('sort_order', { ascending: true })
         .order('created_at', { ascending: true })
-      if (data && data.length > 0) setItems(data.map(r => r.text))
+      const list = data && data.length > 0 ? data.map(r => r.text) : DEFAULT_CHECKLIST
+      setItems(list)
+      // Load today's completions so checks persist across sessions/devices
+      // (graceful if the checklist_completions table doesn't exist yet)
+      try {
+        const { data: done } = await supabase
+          .from('checklist_completions').select('item_text')
+          .eq('client_id', profile.id)
+          .eq('completed_date', todayStr())
+        if (done) {
+          const doneSet = new Set(done.map(r => r.item_text))
+          const initial = {}
+          list.forEach((text, i) => { if (doneSet.has(text)) initial[i] = true })
+          setChecked(initial)
+        }
+      } catch { /* table missing — checks stay local-only */ }
     }
     loadChecklist()
   }, [profile?.id])
+
+  async function toggleCheck(i) {
+    const text = items[i]
+    const willCheck = !checked[i]
+    setChecked(c => ({ ...c, [i]: willCheck }))
+    if (!profile?.id || !text) return
+    try {
+      if (willCheck) {
+        await supabase.from('checklist_completions').upsert(
+          { client_id: profile.id, item_text: text, completed_date: todayStr() },
+          { onConflict: 'client_id,item_text,completed_date' }
+        )
+      } else {
+        await supabase.from('checklist_completions').delete()
+          .eq('client_id', profile.id)
+          .eq('item_text', text)
+          .eq('completed_date', todayStr())
+      }
+    } catch { /* optimistic UI already updated */ }
+  }
   const score = recoveryScore(DEMO_RECOVERY_TODAY)
   const scoreFrac = score / 25
   const circ = 2 * Math.PI * 38
@@ -171,7 +211,7 @@ export default function HomeScreen({
           <button className="btn-small" onClick={() => setChecked({})}>Reset</button>
         </div>
         {items.map((text, i) => (
-          <div className="v2-check-row" key={i} onClick={() => setChecked((c) => ({ ...c, [i]: !c[i] }))}>
+          <div className="v2-check-row" key={i} onClick={() => toggleCheck(i)}>
             <div className={`v2-checkbox ${checked[i] ? 'done' : ''}`} />
             <div className={`v2-check-text ${checked[i] ? 'done' : ''}`}>{text}</div>
           </div>
