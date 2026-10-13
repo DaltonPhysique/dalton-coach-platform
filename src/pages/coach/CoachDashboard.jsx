@@ -263,7 +263,7 @@ export default function CoachDashboard() {
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
 
       {/* ═══ TOP BAR ═══ */}
-      <div style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '0 28px', position: 'sticky', top: 0, zIndex: 20 }}>
+      <div style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: 'env(safe-area-inset-top, 0px) 28px 0', position: 'sticky', top: 0, zIndex: 20 }}>
         <div style={{ maxWidth: 1160, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 62 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 34, height: 34, borderRadius: 9, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid var(--vbrd)', background: '#0d0c0a' }}>
