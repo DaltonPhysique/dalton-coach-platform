@@ -211,9 +211,9 @@ export default function ClientDashboard() {
 
       {activeNav === 'train' && <TrainScreen trainingPlan={trainingPlan} />}
 
-      {activeNav === 'log' && <LogbookScreen />}
+      {activeNav === 'log' && <LogbookScreen profile={profile} />}
 
-      {activeNav === 'recovery' && <RecoveryScreen />}
+      {activeNav === 'recovery' && <RecoveryScreen profile={profile} />}
 
       {activeNav === 'system' && <SystemScreen />}
 
