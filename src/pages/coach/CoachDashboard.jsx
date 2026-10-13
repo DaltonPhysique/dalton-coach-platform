@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../lib/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { DEFAULT_CHECKLIST } from '../../lib/defaultChecklist'
 
 // ─── style constants ──────────────────────────────────────────────────────────
 const EYEBROW = {
@@ -164,6 +165,13 @@ export default function CoachDashboard() {
         checkItemCount = count || 0
       } catch { /* table missing — checklist signal skipped */ }
 
+      // No custom items → the client is on the shared default checklist,
+      // so count completions against its length. Only when there's actual
+      // activity, so brand-new clients still read "No data yet".
+      if (checkItemCount === 0 && completions && completions.length > 0) {
+        checkItemCount = DEFAULT_CHECKLIST.length
+      }
+
       // Active nutrition plan
       const { data: nutPlan } = await supabase
         .from('nutrition_plans').select('training_cal, rest_cal')
@@ -224,12 +232,26 @@ export default function CoachDashboard() {
 
   async function createClient(e) {
     e.preventDefault(); setError(''); setInfo(''); setBusy(true)
+    // signUp() below replaces the current session with the new client's —
+    // capture the coach session first so we can restore it afterwards.
+    const { data: { session: coachSession } } = await supabase.auth.getSession()
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email, password,
       options: { data: { role: 'client', full_name: fullName, coach_id: profile.id,
         start_weight: startWeight || null, goal_weight: goalWeight || null } },
     })
     if (signUpError) { setBusy(false); setError(signUpError.message); return }
+    // Restore the coach session. Never leave Dalton stranded in the
+    // new client's account without telling him.
+    if (coachSession) {
+      const { error: restoreError } = await supabase.auth.setSession(coachSession)
+      if (restoreError) {
+        await supabase.auth.signOut()
+        setBusy(false)
+        setError('Account created, but your coach session was lost. Please sign back in.')
+        return
+      }
+    }
     // Seed the client's phase so the app header badge is correct from day one.
     // (Brand-new clients have no stats row yet, so a plain insert is safe.)
     const newUserId = signUpData?.user?.id
