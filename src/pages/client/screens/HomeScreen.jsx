@@ -1,18 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { DEFAULT_CHECKLIST } from '../../../lib/defaultChecklist'
 import { DEMO_RECOVERY_TODAY } from '../demoData'
-
-const DEFAULT_CHECKLIST = [
-  'Black coffee — cortisol prime',
-  'Weigh in (post-void, pre-coffee) + log weight',
-  'Score daily recovery (sleep, energy, soreness)',
-  'Meal 1 — protein + carbs',
-  'Pre-training carbs hit',
-  'Post-workout shake',
-  'Dinner logged',
-  'Hit 220g protein for the day',
-  'Magnesium + Zinc before bed',
-]
 
 function recoveryScore(r) {
   return r.sleep + r.energy + r.soreness + r.stress + r.digestion
@@ -36,6 +25,25 @@ export default function HomeScreen({
 }) {
   const [checked, setChecked] = useState({})
   const [items, setItems] = useState(DEFAULT_CHECKLIST)
+  const [resetting, setResetting] = useState(false)
+  const [resetMsg, setResetMsg] = useState('')
+
+  async function loadTodayCompletions(list) {
+    // Load today's completions so checks persist across sessions/devices
+    // (graceful if the checklist_completions table doesn't exist yet)
+    try {
+      const { data: done } = await supabase
+        .from('checklist_completions').select('item_text')
+        .eq('client_id', profile.id)
+        .eq('completed_date', todayStr())
+      if (done) {
+        const doneSet = new Set(done.map(r => r.item_text))
+        const initial = {}
+        list.forEach((text, i) => { if (doneSet.has(text)) initial[i] = true })
+        setChecked(initial)
+      }
+    } catch { /* table missing — checks stay local-only */ }
+  }
 
   useEffect(() => {
     async function loadChecklist() {
@@ -47,23 +55,34 @@ export default function HomeScreen({
         .order('created_at', { ascending: true })
       const list = data && data.length > 0 ? data.map(r => r.text) : DEFAULT_CHECKLIST
       setItems(list)
-      // Load today's completions so checks persist across sessions/devices
-      // (graceful if the checklist_completions table doesn't exist yet)
-      try {
-        const { data: done } = await supabase
-          .from('checklist_completions').select('item_text')
-          .eq('client_id', profile.id)
-          .eq('completed_date', todayStr())
-        if (done) {
-          const doneSet = new Set(done.map(r => r.item_text))
-          const initial = {}
-          list.forEach((text, i) => { if (doneSet.has(text)) initial[i] = true })
-          setChecked(initial)
-        }
-      } catch { /* table missing — checks stay local-only */ }
+      loadTodayCompletions(list)
     }
     loadChecklist()
   }, [profile?.id])
+
+  async function handleReset() {
+    if (resetting) return
+    setResetting(true)
+    setResetMsg('')
+    setChecked({})
+    if (profile?.id) {
+      try {
+        const { error } = await supabase
+          .from('checklist_completions').delete()
+          .eq('client_id', profile.id)
+          .eq('completed_date', todayStr())
+        if (error) throw error
+        setResetMsg('Checklist reset ✓')
+      } catch {
+        // DB delete failed — reload truth from the server so the UI
+        // doesn't lie about what's checked.
+        loadTodayCompletions(items)
+        setResetMsg('Could not reset — check your connection and try again.')
+      }
+    }
+    setResetting(false)
+    setTimeout(() => setResetMsg(''), 3500)
+  }
 
   async function toggleCheck(i) {
     const text = items[i]
@@ -208,8 +227,15 @@ export default function HomeScreen({
       <div className="card">
         <div className="v2-card-title-row">
           <span className="v2-card-eyebrow">Daily Checklist</span>
-          <button className="btn-small" onClick={() => setChecked({})}>Reset</button>
+          <button className="btn-small" onClick={handleReset} disabled={resetting}>
+            {resetting ? 'Resetting…' : 'Reset'}
+          </button>
         </div>
+        {resetMsg && (
+          <div className={resetMsg.includes('Could not') ? 'error-text' : 'success-text'} style={{ marginBottom: 10 }}>
+            {resetMsg}
+          </div>
+        )}
         {items.map((text, i) => (
           <div className="v2-check-row" key={i} onClick={() => toggleCheck(i)}>
             <div className={`v2-checkbox ${checked[i] ? 'done' : ''}`} />
