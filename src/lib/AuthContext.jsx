@@ -7,8 +7,10 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [profileError, setProfileError] = useState(false)
 
   async function loadProfile(userId) {
+    setProfileError(false)
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -17,8 +19,10 @@ export function AuthProvider({ children }) {
     if (error) {
       console.error('Failed to load profile:', error.message)
       setProfile(null)
+      setProfileError(true)
     } else {
       setProfile(data)
+      setProfileError(false)
     }
   }
 
@@ -52,6 +56,7 @@ export function AuthProvider({ children }) {
     session,
     user: session?.user ?? null,
     profile,
+    profileError,
     loading,
     signOut,
     refreshProfile: () => session?.user && loadProfile(session.user.id),
