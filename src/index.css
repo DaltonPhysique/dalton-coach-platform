@@ -444,3 +444,33 @@ a { color: var(--v2); text-decoration: none; }
 .v2-check-text { font-size: 14.5px; font-weight: 500; color: var(--text2); }
 .v2-check-text.done { color: var(--text3); text-decoration: line-through; }
 
+/* ════════════════════════════════════════════
+   MOBILE FIT FIXES — PWA phone layout (Oct 13, 2026)
+   Additive only. Nothing above this line is modified.
+════════════════════════════════════════════ */
+
+/* 1. No horizontal page scroll, ever — one wide element used to shift the whole app */
+html, body { overflow-x: hidden; }
+body {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+/* 2. iOS Safari auto-zooms any input with font-size < 16px on focus.
+      That zoom is the #1 "the app doesn't fit my phone" complaint. */
+input, select, textarea { font-size: 16px; }
+
+/* 3. Dynamic viewport height — 100vh breaks when iOS Safari's toolbar shows/hides */
+.center-screen { min-height: 100vh; min-height: 100dvh; }
+
+/* 4. Notch / Dynamic Island safe area — header used to slide under it in standalone mode */
+.v2-header { padding-top: calc(18px + env(safe-area-inset-top, 0px)); }
+.topbar { padding-top: calc(20px + env(safe-area-inset-top, 0px)); }
+
+/* 5. Bottom nav: 9 tabs at 46px min-width = 414px+ overflow on a 375px iPhone.
+      Tighten so all 9 fit without sideways scrolling. */
+.v2-nav-bar { justify-content: space-around; }
+.v2-nav-item { min-width: 0; flex: 1 1 0; padding: 4px 2px; font-size: 8.5px; }
+.v2-nav-item svg { width: 18px; height: 18px; }
+
