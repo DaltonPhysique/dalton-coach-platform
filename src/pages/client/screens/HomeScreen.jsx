@@ -1,19 +1,16 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { DEFAULT_CHECKLIST } from '../../../lib/defaultChecklist'
-import { DEMO_RECOVERY_TODAY } from '../demoData'
+import { localDateStr } from '../../../lib/dates'
+import { goalCopy } from '../../../lib/phase'
 
 function recoveryScore(r) {
   return r.sleep + r.energy + r.soreness + r.stress + r.digestion
 }
 
-function todayStr() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 export default function HomeScreen({
   profile,
+  phase,
   latest,
   avg7,
   goalWeight,
@@ -27,6 +24,7 @@ export default function HomeScreen({
   const [items, setItems] = useState(DEFAULT_CHECKLIST)
   const [resetting, setResetting] = useState(false)
   const [resetMsg, setResetMsg] = useState('')
+  const [recoveryToday, setRecoveryToday] = useState(null)
 
   async function loadTodayCompletions(list) {
     // Load today's completions so checks persist across sessions/devices
@@ -35,7 +33,7 @@ export default function HomeScreen({
       const { data: done } = await supabase
         .from('checklist_completions').select('item_text')
         .eq('client_id', profile.id)
-        .eq('completed_date', todayStr())
+        .eq('completed_date', localDateStr())
       if (done) {
         const doneSet = new Set(done.map(r => r.item_text))
         const initial = {}
@@ -57,7 +55,20 @@ export default function HomeScreen({
       setItems(list)
       loadTodayCompletions(list)
     }
+    async function loadRecoveryToday() {
+      if (!profile?.id) return
+      try {
+        const { data } = await supabase
+          .from('client_recovery_logs')
+          .select('sleep, energy, soreness, stress, digestion')
+          .eq('client_id', profile.id)
+          .eq('log_date', localDateStr())
+          .maybeSingle()
+        if (data) setRecoveryToday(data)
+      } catch { /* table missing — show the no-check-in state */ }
+    }
     loadChecklist()
+    loadRecoveryToday()
   }, [profile?.id])
 
   async function handleReset() {
@@ -70,7 +81,7 @@ export default function HomeScreen({
         const { error } = await supabase
           .from('checklist_completions').delete()
           .eq('client_id', profile.id)
-          .eq('completed_date', todayStr())
+          .eq('completed_date', localDateStr())
         if (error) throw error
         setResetMsg('Checklist reset ✓')
       } catch {
@@ -92,25 +103,27 @@ export default function HomeScreen({
     try {
       if (willCheck) {
         await supabase.from('checklist_completions').upsert(
-          { client_id: profile.id, item_text: text, completed_date: todayStr() },
+          { client_id: profile.id, item_text: text, completed_date: localDateStr() },
           { onConflict: 'client_id,item_text,completed_date' }
         )
       } else {
         await supabase.from('checklist_completions').delete()
           .eq('client_id', profile.id)
           .eq('item_text', text)
-          .eq('completed_date', todayStr())
+          .eq('completed_date', localDateStr())
       }
     } catch { /* optimistic UI already updated */ }
   }
-  const score = recoveryScore(DEMO_RECOVERY_TODAY)
-  const scoreFrac = score / 25
+  // Recovery ring — real data from today's check-in, honest empty state.
+  const score = recoveryToday ? recoveryScore(recoveryToday) : null
+  const scoreFrac = score !== null ? score / 25 : 0
   const circ = 2 * Math.PI * 38
   const offset = circ * (1 - scoreFrac)
-  const ringColor = score >= 20 ? 'var(--g)' : score >= 13 ? 'var(--a)' : 'var(--r)'
-  const statusLabel = score >= 20 ? 'Optimal' : score >= 13 ? 'Good' : 'Reduced'
+  const ringColor = score === null ? 'var(--text3)' : score >= 20 ? 'var(--g)' : score >= 13 ? 'var(--a)' : 'var(--r)'
+  const statusLabel = score === null ? 'No check-in' : score >= 20 ? 'Optimal' : score >= 13 ? 'Good' : 'Reduced'
 
-  const remaining = goalWeight && avg7 ? Math.max(0, avg7 - goalWeight).toFixed(1) : null
+  // Phase-aware goal block (replaces the old cut-assuming copy).
+  const goal = goalCopy(phase, { startWeight, goalWeight, current: avg7 })
 
   return (
     <div>
@@ -132,10 +145,10 @@ export default function HomeScreen({
           </div>
         </div>
 
-        {goalWeight && (
+        {goalWeight && progressPct !== null && (
           <>
             <div className="v2-card-eyebrow" style={{ marginBottom: 4 }}>
-              Phase 1 goal — {goalWeight} lbs
+              {goal.title}
             </div>
             <div className="v2-goal-track">
               <div className="v2-goal-fill" style={{ width: `${progressPct ?? 0}%` }} />
@@ -145,9 +158,17 @@ export default function HomeScreen({
               <span>{progressPct ? `${progressPct.toFixed(0)}%` : '0%'}</span>
               <span>{goalWeight} lbs</span>
             </div>
-            {remaining !== null && (
-              <div className="v2-goal-remaining">{remaining} lbs to goal</div>
+            {goal.sub && (
+              <div className="v2-goal-remaining">{goal.sub}</div>
             )}
+          </>
+        )}
+        {goalWeight && progressPct === null && goal.sub && (
+          <>
+            <div className="v2-card-eyebrow" style={{ marginBottom: 4 }}>
+              {goal.title}
+            </div>
+            <div className="v2-goal-remaining">{goal.sub}</div>
           </>
         )}
       </div>
@@ -192,35 +213,39 @@ export default function HomeScreen({
         )}
       </div>
 
-      {/* Recovery snapshot — DEMO DATA (no recovery_logs table yet) */}
+      {/* Recovery snapshot — REAL DATA (today's check-in from client_recovery_logs) */}
       <div className="card">
         <div className="v2-card-title-row">
           <span className="v2-card-eyebrow">Recovery Today</span>
-          <button className="btn-small">Log</button>
         </div>
-        <div className="v2-demo-badge">Demo data — recovery tracking not yet connected</div>
-        <div className="v2-recovery-row">
-          <div className="v2-ring-wrap">
-            <svg viewBox="0 0 86 86">
-              <circle className="v2-ring-track" cx="43" cy="43" r="38" />
-              <circle
-                className="v2-ring-fill"
-                cx="43" cy="43" r="38"
-                stroke={ringColor}
-                strokeDasharray={circ.toFixed(1)}
-                strokeDashoffset={offset.toFixed(1)}
-              />
-            </svg>
-            <div className="v2-ring-label">
-              <span className="v2-ring-num" style={{ color: ringColor }}>{score}</span>
-              <span className="v2-ring-den">/25</span>
+        {score === null ? (
+          <div className="empty-state">No check-in yet today. Log yours from the Recovery tab.</div>
+        ) : (
+          <div className="v2-recovery-row">
+            <div className="v2-ring-wrap">
+              <svg viewBox="0 0 86 86">
+                <circle className="v2-ring-track" cx="43" cy="43" r="38" />
+                <circle
+                  className="v2-ring-fill"
+                  cx="43" cy="43" r="38"
+                  stroke={ringColor}
+                  strokeDasharray={circ.toFixed(1)}
+                  strokeDashoffset={offset.toFixed(1)}
+                />
+              </svg>
+              <div className="v2-ring-label">
+                <span className="v2-ring-num" style={{ color: ringColor }}>{score}</span>
+                <span className="v2-ring-den">/25</span>
+              </div>
+            </div>
+            <div>
+              <div className="v2-recovery-status" style={{ color: ringColor }}>{statusLabel}</div>
+              <div className="v2-recovery-sub">
+                {score >= 20 ? 'Take every set to failure today.' : 'Train smart — listen to your body today.'}
+              </div>
             </div>
           </div>
-          <div>
-            <div className="v2-recovery-status" style={{ color: ringColor }}>{statusLabel}</div>
-            <div className="v2-recovery-sub">Take every set to failure today.</div>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Daily checklist — coach-customizable via checklist_items table */}

@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../lib/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { localDateStr } from '../../lib/dates'
+import { normalizePhase, deltaColor, netChangeLabel, progressPctOf } from '../../lib/phase'
+import { mergeRecLogs, avgRecPct, recPct } from '../../lib/recovery'
 
 const ANGLES = ['front', 'side', 'back']
 const EYEBROW = { fontSize: 10, fontWeight: 800, letterSpacing: '1.2px', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 8 }
@@ -172,12 +175,23 @@ export default function ClientDetail() {
   }
 
   async function loadRecLogs() {
-    const { data } = await supabase
+    const { data: coachRows } = await supabase
       .from('coach_recovery_logs').select('*').eq('client_id', clientId)
       .order('log_date', { ascending: false }).limit(14)
-    setRecLogs(data || [])
-    // Pre-fill date with today
-    const today = new Date().toISOString().slice(0, 10)
+    // Merge the client's own check-ins so both sides live in one history.
+    // (Graceful if the client table doesn't exist yet.)
+    let clientRows = []
+    try {
+      const { data: crl } = await supabase
+        .from('client_recovery_logs')
+        .select('id, log_date, sleep, energy, soreness, stress, digestion')
+        .eq('client_id', clientId)
+        .order('log_date', { ascending: false }).limit(14)
+      clientRows = crl || []
+    } catch { /* table missing — coach rows alone */ }
+    setRecLogs(mergeRecLogs(coachRows, clientRows).slice(0, 14))
+    // Pre-fill date with today (local — UTC would push a 9pm ET entry to "tomorrow")
+    const today = localDateStr()
     setRecForm(f => ({ ...f, log_date: today }))
   }
   async function saveRecLog(e) {
@@ -241,19 +255,31 @@ export default function ClientDetail() {
     loadChecklist()
   }
 
-  // ── derived ────────────────────────────────────────────────────────────────
+  // ── derived (phase-aware) ──────────────────────────────────────────────
+  const phase = stats?.current_phase
   const latest = weights[0]
   const avg7   = weights.length ? weights.slice(0,7).reduce((a,w)=>a+Number(w.weight),0)/Math.min(weights.length,7) : null
-  const totalLost = (client?.start_weight && latest) ? (Number(client.start_weight) - Number(latest.weight)).toFixed(1) : null
-  const progressPct = (client?.start_weight && client?.goal_weight && latest)
-    ? Math.min(100, Math.max(0, ((Number(client.start_weight)-Number(latest.weight))/(Number(client.start_weight)-Number(client.goal_weight)))*100))
+  // Net change from start weight (signed). Phase decides the label/color.
+  const netChange = (client?.start_weight && latest) ? (Number(latest.weight) - Number(client.start_weight)) : null
+  const netLabel = netChangeLabel(phase)
+  const netColor = netChange === null ? 'var(--text3)'
+    : normalizePhase(phase) === 'cut' ? (netChange < 0 ? 'var(--g)' : netChange > 0 ? 'var(--r)' : 'var(--text3)')
+    : normalizePhase(phase) === 'bulk' ? (netChange > 0 ? 'var(--g)' : netChange < 0 ? 'var(--r)' : 'var(--text3)')
+    : Math.abs(netChange) <= 2 ? 'var(--text3)' : 'var(--a)'
+  // NaN-safe: null when start === goal (Maintenance/Recomp) or missing.
+  const progressPct = (latest)
+    ? progressPctOf(client?.start_weight, client?.goal_weight, latest.weight)
     : null
   const last7w = weights.slice(0,7); const prev7w = weights.slice(7,14)
   const weeklyDelta = (last7w.length && prev7w.length)
     ? avg(last7w.map(w=>Number(w.weight))) - avg(prev7w.map(w=>Number(w.weight)))
     : null
-  const avgRec = recLogs.length ? avg(recLogs.slice(0,7).map(r=>r.sleep+r.energy+r.soreness+r.stress+r.digestion+r.motivation)) : null
-  const avgMot = recLogs.length ? avg(recLogs.slice(0,7).map(r=>r.motivation).filter(Boolean)) : null
+  // Recovery averages over merged coach + client logs, normalized 0–100.
+  // Motivation comes from coach-entered rows only — never fabricated.
+  const avgRec = recLogs.length ? avgRecPct(recLogs.slice(0, 7)) : null
+  const avgMot = recLogs.length
+    ? avg(recLogs.slice(0, 7).filter(r => r._src === 'coach').map(r => r.motivation).filter(Boolean))
+    : null
   const daysSinceCheckin = daysSince(stats?.last_checkin_date)
 
   const TABS = [
@@ -285,9 +311,9 @@ export default function ClientDetail() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
 
-      {/* ═══ STICKY HEADER ═══ */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '0 28px' }}>
+      {/* ═══ STICKY HEADER (safe-area aware — never slides under the notch) ═══ */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, paddingTop: 'env(safe-area-inset-top, 0px)', background: 'var(--bg2)' }}>
+        <div className="coach-detail-bar" style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '0 28px' }}>
           <div style={{ maxWidth: 1040, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 16, height: 62 }}>
             <button onClick={() => navigate('/coach')} style={{ background: 'var(--bg4)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 13px', color: 'var(--text2)', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -309,7 +335,7 @@ export default function ClientDetail() {
             </div>
           </div>
         </div>
-        <div style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '0 28px' }}>
+        <div className="coach-detail-bar" style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '0 28px' }}>
           <div style={{ maxWidth: 1040, margin: '0 auto', display: 'flex', gap: 2, overflowX: 'auto' }}>
             {TABS.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: '13px 18px', background: 'none', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', color: tab === t.id ? 'var(--v2)' : 'var(--text2)', borderBottom: tab === t.id ? '2px solid var(--v)' : '2px solid transparent', transition: 'color .15s' }}>
@@ -320,18 +346,18 @@ export default function ClientDetail() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1040, margin: '0 auto', padding: '26px 28px' }}>
+      <div className="coach-detail-content" style={{ maxWidth: 1040, margin: '0 auto', padding: '26px 28px' }}>
 
         {/* ══════ OVERVIEW TAB ══════ */}
         {tab === 'overview' && (
           <>
-            {/* 5 weight KPIs */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 16 }}>
+            {/* 5 weight KPIs (phase-aware labels + colors) */}
+            <div className="coach-grid-5" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 16 }}>
               {[
                 { label: 'Current Weight', val: latest ? `${Number(latest.weight).toFixed(1)}` : '—', unit: latest ? 'lbs' : '', col: 'var(--text)' },
-                { label: '7-Day Avg',      val: avg7 ? avg7.toFixed(1) : '—',              unit: avg7 ? 'lbs' : '',             col: 'var(--g)' },
-                { label: 'Weekly Δ',       val: weeklyDelta !== null ? `${weeklyDelta>0?'+':''}${weeklyDelta.toFixed(1)}` : '—', unit: weeklyDelta!==null?'lbs':'', col: weeklyDelta===null?'var(--text3)':weeklyDelta<=0?'var(--g)':'var(--r)' },
-                { label: 'Total Lost',     val: totalLost !== null ? (totalLost > 0 ? totalLost : '0') : '—', unit: totalLost ? 'lbs' : '', col: totalLost > 0 ? 'var(--g)' : 'var(--text3)' },
+                { label: '7-Day Avg',      val: avg7 ? avg7.toFixed(1) : '—',              unit: avg7 ? 'lbs' : '',             col: 'var(--text)' },
+                { label: 'Weekly Δ',       val: weeklyDelta !== null ? `${weeklyDelta>0?'+':''}${weeklyDelta.toFixed(1)}` : '—', unit: weeklyDelta!==null?'lbs':'', col: deltaColor(weeklyDelta, phase) },
+                { label: netLabel,          val: netChange !== null ? `${netChange > 0 ? '+' : ''}${netChange.toFixed(1)}` : '—', unit: netChange !== null ? 'lbs' : '', col: netColor },
                 { label: 'Goal Progress',  val: progressPct !== null ? progressPct.toFixed(0) : '—', unit: progressPct !== null ? '%' : '', col: 'var(--v2)' },
               ].map(s => (
                 <div key={s.label} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 13, padding: '15px 14px' }}>
@@ -357,15 +383,15 @@ export default function ClientDetail() {
             )}
 
             {/* Coaching metrics grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
-              {/* Recovery avg */}
+            <div className="coach-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
+              {/* Recovery avg — merged coach + client logs, normalized 0–100 */}
               <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 13, padding: '15px 16px' }}>
                 <div style={EYEBROW}>Avg Recovery Score</div>
-                <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.5px', color: avgRec===null?'var(--text3)':avgRec>=22?'var(--g)':avgRec>=16?'var(--a)':'var(--r)', lineHeight: 1 }}>
+                <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.5px', color: avgRec===null?'var(--text3)':avgRec>=73?'var(--g)':avgRec>=53?'var(--a)':'var(--r)', lineHeight: 1 }}>
                   {avgRec !== null ? avgRec.toFixed(0) : '—'}
-                  {avgRec !== null && <span style={{ fontSize: 13, color: 'var(--text3)', fontWeight: 500 }}>/30</span>}
+                  {avgRec !== null && <span style={{ fontSize: 13, color: 'var(--text3)', fontWeight: 500 }}>%</span>}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>7-day avg · 6 metrics</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>7-day avg · coach + client logs</div>
               </div>
 
               {/* Motivation avg */}
@@ -391,7 +417,7 @@ export default function ClientDetail() {
             </div>
 
             {/* Plan summary row */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <div className="coach-detail-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 16 }}>
               <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 13, padding: '14px 16px' }}>
                 <div style={EYEBROW}>Active Phase</div>
                 <div style={{ fontSize: 15, fontWeight: 700 }}>{stats?.current_phase || '—'}</div>
@@ -409,7 +435,7 @@ export default function ClientDetail() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 22 }}>
+            <div className="coach-detail-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 22 }}>
               <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 13, padding: '14px 16px' }}>
                 <div style={EYEBROW}>Last Weigh-In</div>
                 <div style={{ fontSize: 15, fontWeight: 700 }}>{latest?.log_date || '—'}</div>
@@ -426,10 +452,20 @@ export default function ClientDetail() {
             <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: '20px 22px', marginBottom: 22 }}>
               <div style={{ ...EYEBROW, marginBottom: 16 }}>Coaching Metadata</div>
               <form onSubmit={saveStats}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div className="coach-detail-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
                   <div>
                     <label style={LBL}>Active Phase</label>
-                    <input value={statsForm.current_phase} onChange={e => setStatsForm(f => ({ ...f, current_phase: e.target.value }))} placeholder="Phase 1 Cut" />
+                    <select
+                      value={statsForm.current_phase}
+                      onChange={e => setStatsForm(f => ({ ...f, current_phase: e.target.value }))}
+                      style={{ minHeight: 44, fontSize: 16 }}
+                    >
+                      <option value="">— Select —</option>
+                      <option value="Cut">Cut</option>
+                      <option value="Recomp">Recomp</option>
+                      <option value="Lean Bulk">Lean Bulk</option>
+                      <option value="Maintenance">Maintenance</option>
+                    </select>
                   </div>
                   <div>
                     <label style={LBL}>Compliance % (this week)</label>
@@ -465,7 +501,7 @@ export default function ClientDetail() {
                   <div key={w.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', borderBottom: i < weights.length - 1 ? '1px solid var(--border)' : 'none' }}>
                     <span style={{ fontSize: 13, color: 'var(--text3)', fontWeight: 600 }}>{w.log_date}</span>
                     <span style={{ fontSize: 16, fontWeight: 800 }}>{Number(w.weight).toFixed(1)}<span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 500 }}> lbs</span></span>
-                    <span style={{ fontSize: 13, fontWeight: 700, minWidth: 56, textAlign: 'right', color: delta===null?'transparent':delta<0?'var(--g)':delta>0?'var(--r)':'var(--text3)' }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, minWidth: 56, textAlign: 'right', color: delta===null?'transparent':deltaColor(delta, phase) }}>
                       {delta !== null ? `${delta>0?'+':''}${delta.toFixed(1)}` : ''}
                     </span>
                   </div>
@@ -501,23 +537,28 @@ export default function ClientDetail() {
               <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={EYEBROW}>Recovery History</div>
                 <div style={{ fontSize: 12, color: 'var(--text3)' }}>
-                  {recLogs.length > 0 && `Avg: ${avg(recLogs.slice(0,7).map(r=>r.sleep+r.energy+r.soreness+r.stress+r.digestion+r.motivation))?.toFixed(0) ?? '—'}/30`}
+                  {recLogs.length > 0 && `Avg: ${avgRecPct(recLogs.slice(0, 7))?.toFixed(0) ?? '—'}%`}
                 </div>
               </div>
               {recLogs.length === 0 && (
                 <div style={{ padding: '36px', textAlign: 'center', color: 'var(--text3)', fontSize: 14 }}>No recovery entries yet.</div>
               )}
               {recLogs.map((r, i) => {
-                const total = r.sleep + r.energy + r.soreness + r.stress + r.digestion + r.motivation
-                const col = total >= 22 ? 'var(--g)' : total >= 16 ? 'var(--a)' : 'var(--r)'
+                const pct = recPct(r)
+                const col = pct === null ? 'var(--text3)' : pct >= 73 ? 'var(--g)' : pct >= 53 ? 'var(--a)' : 'var(--r)'
                 return (
-                  <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 20px', borderBottom: i < recLogs.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <div key={`${r._src}-${r.id}`} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 20px', borderBottom: i < recLogs.length - 1 ? '1px solid var(--border)' : 'none' }}>
                     <span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 600, width: 90, flexShrink: 0 }}>{r.log_date}</span>
                     <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, flex: 1 }}>
-                      Slp:{r.sleep} E:{r.energy} Sor:{r.soreness} Str:{r.stress} Dig:{r.digestion} Mot:{r.motivation}
+                      Slp:{r.sleep} E:{r.energy} Sor:{r.soreness} Str:{r.stress} Dig:{r.digestion}{r._src === 'coach' && r.motivation != null ? ` Mot:${r.motivation}` : ''}
                     </span>
-                    <span style={{ fontSize: 16, fontWeight: 800, color: col, flexShrink: 0 }}>{total}/30</span>
-                    <button onClick={() => deleteRecLog(r.id)} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 18, cursor: 'pointer', padding: '0 4px', flexShrink: 0 }}>×</button>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: r._src === 'coach' ? 'var(--v2)' : 'var(--text3)', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '.4px' }}>
+                      {r._src}
+                    </span>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: col, flexShrink: 0 }}>{pct !== null ? `${pct.toFixed(0)}%` : '—'}</span>
+                    {r._src === 'coach' && (
+                      <button onClick={() => deleteRecLog(r.id)} aria-label="Delete recovery log" style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 20, cursor: 'pointer', padding: '10px', flexShrink: 0, minWidth: 44, minHeight: 44 }}>×</button>
+                    )}
                   </div>
                 )
               })}
@@ -574,7 +615,7 @@ export default function ClientDetail() {
                 {ANGLES.reduce((a, ang) => a + (photos[ang]?.length || 0), 0)} photos total
               </span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+            <div className="coach-photo-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
               {ANGLES.map(angle => {
                 const p = photos[angle]?.[0]
                 return (

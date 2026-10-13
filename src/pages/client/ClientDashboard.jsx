@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../lib/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { localDateStr } from '../../lib/dates'
+import { progressPctOf } from '../../lib/phase'
 import V2Header from './components/V2Header'
 import BottomNav from './components/BottomNav'
 import HomeScreen from './screens/HomeScreen'
@@ -116,7 +118,7 @@ export default function ClientDashboard() {
     const val = parseFloat(weightInput)
     if (!val || val < 50 || val > 600) return
     setWeightBusy(true)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDateStr() // local date — UTC would push a 9pm ET weigh-in to "tomorrow"
     await supabase
       .from('weight_logs')
       .upsert({ client_id: profile.id, log_date: today, weight: val }, { onConflict: 'client_id,log_date' })
@@ -129,7 +131,7 @@ export default function ClientDashboard() {
     if (!file) return
     setPhotoError('')
     setPhotoBusy(true)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDateStr()
     const ext = file.name.split('.').pop() || 'jpg'
     const path = `${profile.id}/${angle}/${today}.${ext}`
 
@@ -160,10 +162,9 @@ export default function ClientDashboard() {
     : null
   const startWeight = profile?.start_weight
   const goalWeight = profile?.goal_weight
-  const progressPct =
-    startWeight && goalWeight && avg7
-      ? Math.min(100, Math.max(0, ((startWeight - avg7) / (startWeight - goalWeight)) * 100))
-      : null
+  // Phase-aware + NaN-safe: null when start === goal (Maintenance/Recomp)
+  // or any value is missing — callers hide the progress bar in that case.
+  const progressPct = progressPctOf(startWeight, goalWeight, avg7)
 
   return (
     <div className="app-shell" style={{ paddingBottom: 110 }}>
@@ -172,6 +173,7 @@ export default function ClientDashboard() {
       {activeNav === 'home' && (
         <HomeScreen
           profile={profile}
+          phase={phase}
           latest={latest}
           avg7={avg7}
           goalWeight={goalWeight}
@@ -196,8 +198,12 @@ export default function ClientDashboard() {
 
       {activeNav === 'progress' && (
         <ProgressScreen
+          profile={profile}
           weights={weights}
           avg7={avg7}
+          phase={phase}
+          goalWeight={goalWeight}
+          startWeight={startWeight}
           weightInput={weightInput}
           setWeightInput={setWeightInput}
           weightBusy={weightBusy}

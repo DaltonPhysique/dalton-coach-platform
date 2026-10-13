@@ -1,3 +1,5 @@
+import DemoBadge from '../components/DemoBadge'
+
 const PRIORITIES = [
   { num: 1, name: 'Upper Chest', note: 'Incline Smith first — every upper session', pct: 100 },
   { num: 2, name: 'Side Delts', note: 'Cable laterals — 3 sets both upper sessions', pct: 80 },
@@ -25,6 +27,7 @@ export default function SystemScreen() {
 
       <div className="card">
         <div className="v2-card-eyebrow" style={{ marginBottom: 4 }}>Rebuild Priorities</div>
+        <DemoBadge label="Template — your coach will personalize this to your body" />
         {PRIORITIES.map((p) => (
           <div className="v2-priority-row" key={p.num}>
             <div className="v2-priority-num">{p.num}</div>

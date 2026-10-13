@@ -16,12 +16,15 @@
   --vbg: rgba(196,154,88,.1);
   --vbrd: rgba(196,154,88,.24);
   --g: #00d48a;
+  --g2: #009e68;
   --gbg: rgba(0,212,138,.09);
   --gbrd: rgba(0,212,138,.2);
   --a: #f0972b;
+  --a2: #c06f14;
   --abg: rgba(240,151,43,.09);
   --abrd: rgba(240,151,43,.2);
   --r: #ef5757;
+  --r2: #b93a3a;
   --rbg: rgba(239,87,87,.09);
   --rbrd: rgba(239,87,87,.2);
   --rr: 10px;
@@ -474,3 +477,60 @@ input, select, textarea { font-size: 16px; }
 .v2-nav-item { min-width: 0; flex: 1 1 0; padding: 4px 2px; font-size: 8.5px; }
 .v2-nav-item svg { width: 18px; height: 18px; }
 
+
+/* ════════════════════════════════════════════
+   COACH DASHBOARD — phone layout pass (Oct 13, 2026)
+   Additive only. Inline grid styles are overridden
+   via !important inside the media queries below.
+════════════════════════════════════════════ */
+
+/* Tap targets: interactive elements get a 44px minimum touch area */
+.coach-cards button,
+.coach-detail-content button,
+.v2-subtab {
+  min-height: 44px;
+}
+/* Small icon-only buttons keep their look but gain touch area */
+.coach-cards button[aria-label],
+.coach-detail-content button[aria-label] {
+  min-width: 44px;
+}
+
+@media (max-width: 860px) {
+  /* Two-column command center → single column; sidebar stacks below */
+  .coach-two-col { grid-template-columns: 1fr !important; }
+
+  /* 4-across KPI + metric grids → 2 across */
+  .coach-kpi-4,
+  .coach-metric-4 { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Tighter page padding on phones */
+  .coach-content { padding: 18px 16px !important; }
+  .coach-detail-content { padding: 18px 16px !important; }
+
+  /* Top bar: less side padding on phones */
+  .coach-topbar { padding-left: 16px !important; padding-right: 16px !important; }
+  .coach-topbar-inner { padding: 0 2px !important; }
+}
+
+@media (max-width: 560px) {
+  /* 5-across weight KPIs → 2 across (5th wraps) */
+  .coach-grid-5 { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* 3-across coaching grids → single column */
+  .coach-grid-3,
+  .coach-detail-grid-3 { grid-template-columns: 1fr !important; }
+
+  /* 2-across detail grids → single column */
+  .coach-detail-grid-2,
+  .coach-form-2col { grid-template-columns: 1fr !important; }
+
+  /* Photos stay 3-across but tighten the gap */
+  .coach-photo-grid { gap: 8px !important; }
+
+  /* Client detail header bars: less side padding on phones */
+  .coach-detail-bar { padding-left: 16px !important; padding-right: 16px !important; }
+
+  /* Prevent the client-card header from overflowing */
+  .coach-cards { overflow: hidden; }
+}

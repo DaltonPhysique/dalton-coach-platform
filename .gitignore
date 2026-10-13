@@ -1,0 +1,11 @@
+# Build output — never commit (Netlify builds from source)
+dist/
+
+# Dependencies
+node_modules/
+
+# Env / local
+.env
+.env.local
+*.log
+.DS_Store

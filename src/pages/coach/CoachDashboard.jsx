@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../lib/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { DEFAULT_CHECKLIST } from '../../lib/defaultChecklist'
+import { localDateStr, daysBetween } from '../../lib/dates'
+import { normalizePhase, deltaColor, progressPctOf, expectsWeightMovement } from '../../lib/phase'
+import { mergeRecLogs, avgRecPct } from '../../lib/recovery'
 
 // ─── style constants ──────────────────────────────────────────────────────────
 const EYEBROW = {
@@ -23,14 +26,10 @@ function avg(arr) {
   if (!arr?.length) return null
   return arr.reduce((a, b) => a + b, 0) / arr.length
 }
-function sparkColor(delta) {
-  if (delta === null) return 'var(--text3)'
-  return delta <= 0 ? 'var(--g)' : 'var(--r)'
-}
-
 // ─── compute traffic-light status for one client (7-day window) ─────────────
 function weekAgoStr() {
-  return new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10)
+  const d = new Date(Date.now() - 6 * 86400000)
+  return localDateStr(d) // local date, not UTC — matches how clients log
 }
 function distinctDays(rows, key) {
   const cutoff = weekAgoStr()
@@ -61,12 +60,15 @@ const STATUS_DOT = { red: 'var(--r)', amber: 'var(--a)', green: 'var(--g)', noda
 // ─── compute alert flags for one client ──────────────────────────────────────
 function computeAlerts(c) {
   const alerts = []
+  const phase = c.stats?.current_phase
 
-  // Weight stalled 14+ days
-  if (c.wlogs?.length >= 2) {
+  // Weight stalled — only when movement is expected (cut/bulk). A flat
+  // scale IS the goal in recomp/maintenance. Also requires the 14 entries
+  // to actually span 14+ days (the old code fired for 14 rapid entries).
+  if (c.wlogs?.length >= 2 && expectsWeightMovement(phase)) {
     const sorted = [...c.wlogs].sort((a, b) => b.log_date.localeCompare(a.log_date))
     const last14 = sorted.slice(0, 14)
-    if (last14.length >= 14) {
+    if (last14.length >= 14 && daysBetween(last14[0].log_date, last14[last14.length - 1].log_date) >= 13) {
       const first7avg = avg(last14.slice(0, 7).map(w => Number(w.weight)))
       const prev7avg  = avg(last14.slice(7).map(w => Number(w.weight)))
       if (first7avg !== null && prev7avg !== null && Math.abs(first7avg - prev7avg) < 0.5) {
@@ -75,18 +77,21 @@ function computeAlerts(c) {
     }
   }
 
-  // Recovery avg below 6/10 (score out of 30; threshold = 18 out of 30) for 3+ days
+  // Recovery avg below 60% for 3+ days (was: 18/30 on the coach-only table;
+  // now normalized 0–100 across merged coach + client logs).
   if (c.recLogs?.length >= 3) {
     const recent3 = [...c.recLogs].sort((a, b) => b.log_date.localeCompare(a.log_date)).slice(0, 3)
-    const avgRec = avg(recent3.map(r => r.sleep + r.energy + r.soreness + r.stress + r.digestion + r.motivation))
-    if (avgRec !== null && avgRec < 18) {
-      alerts.push({ type: 'recovery_low', label: `Recovery avg ${avgRec.toFixed(0)}/30 (3-day)`, severity: 'red' })
+    const avgRec = avgRecPct(recent3)
+    if (avgRec !== null && avgRec < 60) {
+      alerts.push({ type: 'recovery_low', label: `Recovery avg ${avgRec.toFixed(0)}% (3-day)`, severity: 'red' })
     }
   }
 
-  // Motivation avg below 3/5 for 3+ days
-  if (c.recLogs?.length >= 3) {
-    const recent3 = [...c.recLogs].sort((a, b) => b.log_date.localeCompare(a.log_date)).slice(0, 3)
+  // Motivation avg below 3/5 for 3+ days (coach-logged only — the client
+  // app doesn't track motivation, so never fabricate it from client rows).
+  const coachRows = (c.recLogs || []).filter(r => r._src === 'coach')
+  if (coachRows.length >= 3) {
+    const recent3 = [...coachRows].sort((a, b) => b.log_date.localeCompare(a.log_date)).slice(0, 3)
     const avgMot  = avg(recent3.map(r => r.motivation).filter(Boolean))
     if (avgMot !== null && avgMot < 3) {
       alerts.push({ type: 'motivation_low', label: `Motivation avg ${avgMot.toFixed(1)}/5 (3-day)`, severity: 'red' })
@@ -121,6 +126,7 @@ export default function CoachDashboard() {
   const [startWeight, setStartWeight] = useState('')
   const [goalWeight,  setGoalWeight]  = useState('')
   const [phase,       setPhase]       = useState('Cut')
+  const [acctType,    setAcctType]    = useState('client') // 'client' | 'coach' — gated: only a signed-in coach reaches this form
   const [busy,        setBusy]        = useState(false)
   const [error,       setError]       = useState('')
   const [info,        setInfo]        = useState('')
@@ -141,10 +147,21 @@ export default function CoachDashboard() {
         .from('weight_logs').select('weight, log_date')
         .eq('client_id', c.id).order('log_date', { ascending: false }).limit(14)
 
-      // Recovery logs (7 days from new table — graceful if table missing)
-      const { data: recLogs } = await supabase
+      // Recovery logs — merged from BOTH tables so the coach sees the
+      // client's own check-ins, not just coach-entered rows. Graceful if
+      // either table is missing. Merged rows carry `_src: 'coach'|'client'`
+      // and scores are normalized 0–100 via recPct() (see lib/recovery.js).
+      const { data: coachRecLogs } = await supabase
         .from('coach_recovery_logs').select('*')
         .eq('client_id', c.id).order('log_date', { ascending: false }).limit(7)
+      let clientRecLogs = []
+      try {
+        const { data: crl } = await supabase
+          .from('client_recovery_logs').select('log_date, sleep, energy, soreness, stress, digestion')
+          .eq('client_id', c.id).order('log_date', { ascending: false }).limit(7)
+        clientRecLogs = crl || []
+      } catch { /* table missing — coach rows alone */ }
+      const recLogs = mergeRecLogs(coachRecLogs, clientRecLogs)
 
       // Coach client stats
       const { data: stats } = await supabase
@@ -190,11 +207,10 @@ export default function CoachDashboard() {
         : null
 
       const recSorted = [...(recLogs || [])].sort((a, b) => b.log_date.localeCompare(a.log_date))
-      const avgRec = recSorted.length
-        ? avg(recSorted.slice(0, 7).map(r => r.sleep + r.energy + r.soreness + r.stress + r.digestion + r.motivation))
-        : null
+      // Normalized 0–100 across merged coach + client rows (see lib/recovery.js).
+      const avgRec = recSorted.length ? avgRecPct(recSorted.slice(0, 7)) : null
       const avgMot = recSorted.length
-        ? avg(recSorted.slice(0, 7).map(r => r.motivation).filter(Boolean))
+        ? avg(recSorted.slice(0, 7).filter(r => r._src === 'coach').map(r => r.motivation).filter(Boolean))
         : null
 
       const enrichedClient = {
@@ -230,19 +246,22 @@ export default function CoachDashboard() {
     setLoading(false)
   }
 
-  async function createClient(e) {
+  async function createAccount(e) {
     e.preventDefault(); setError(''); setInfo(''); setBusy(true)
-    // signUp() below replaces the current session with the new client's —
+    const isCoach = acctType === 'coach'
+    // signUp() below replaces the current session with the new account's —
     // capture the coach session first so we can restore it afterwards.
     const { data: { session: coachSession } } = await supabase.auth.getSession()
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email, password,
-      options: { data: { role: 'client', full_name: fullName, coach_id: profile.id,
-        start_weight: startWeight || null, goal_weight: goalWeight || null } },
+      options: { data: isCoach
+        ? { role: 'coach', full_name: fullName }
+        : { role: 'client', full_name: fullName, coach_id: profile.id,
+            start_weight: startWeight || null, goal_weight: goalWeight || null } },
     })
     if (signUpError) { setBusy(false); setError(signUpError.message); return }
     // Restore the coach session. Never leave Dalton stranded in the
-    // new client's account without telling him.
+    // new account without telling him.
     if (coachSession) {
       const { error: restoreError } = await supabase.auth.setSession(coachSession)
       if (restoreError) {
@@ -255,11 +274,13 @@ export default function CoachDashboard() {
     // Seed the client's phase so the app header badge is correct from day one.
     // (Brand-new clients have no stats row yet, so a plain insert is safe.)
     const newUserId = signUpData?.user?.id
-    if (newUserId && phase) {
+    if (!isCoach && newUserId && phase) {
       await supabase.from('coach_client_stats').insert({ client_id: newUserId, current_phase: phase })
     }
     setBusy(false)
-    setInfo(`Account created for ${fullName}. Share their email + password directly.`)
+    setInfo(isCoach
+      ? `Coach account created for ${fullName}. Share their email + password directly.`
+      : `Account created for ${fullName}. Share their email + password directly.`)
     setFullName(''); setEmail(''); setPassword(''); setStartWeight(''); setGoalWeight(''); setPhase('Cut')
     setShowForm(false); loadClients()
   }
@@ -285,8 +306,8 @@ export default function CoachDashboard() {
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
 
       {/* ═══ TOP BAR ═══ */}
-      <div style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: 'env(safe-area-inset-top, 0px) 28px 0', position: 'sticky', top: 0, zIndex: 20 }}>
-        <div style={{ maxWidth: 1160, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 62 }}>
+      <div className="coach-topbar" style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: 'env(safe-area-inset-top, 0px) 28px 0', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div className="coach-topbar-inner" style={{ maxWidth: 1160, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 62 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 34, height: 34, borderRadius: 9, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid var(--vbrd)', background: '#0d0c0a' }}>
               <img src="/rebuild-logo.png" alt="The Rebuild" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -311,7 +332,7 @@ export default function CoachDashboard() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1160, margin: '0 auto', padding: '28px 28px' }}>
+      <div className="coach-content" style={{ maxWidth: 1160, margin: '0 auto', padding: '28px 28px' }}>
 
         {/* ── Page heading ── */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 }}>
@@ -352,12 +373,12 @@ export default function CoachDashboard() {
 
         {/* ── Global KPI bar ── */}
         {!loading && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
+          <div className="coach-kpi-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
             {[
               { label: 'Active Clients', val: activeCount, unit: '', col: 'var(--v2)', accent: 'linear-gradient(90deg,var(--v3),var(--v2))' },
               { label: 'Critical Alerts', val: redAlerts || 0, unit: '', col: redAlerts > 0 ? 'var(--r)' : 'var(--text3)', accent: redAlerts > 0 ? 'linear-gradient(90deg,var(--r2),var(--r))' : 'var(--border)' },
               { label: 'Amber Alerts', val: totalAlerts - redAlerts, unit: '', col: (totalAlerts - redAlerts) > 0 ? 'var(--a)' : 'var(--text3)', accent: (totalAlerts - redAlerts) > 0 ? 'linear-gradient(90deg,var(--a2),var(--a))' : 'var(--border)' },
-              { label: 'Avg Weekly Δ', val: globalAvgDelta !== null ? `${globalAvgDelta > 0 ? '+' : ''}${globalAvgDelta.toFixed(1)}` : '—', unit: globalAvgDelta !== null ? 'lbs' : '', col: globalAvgDelta === null ? 'var(--text3)' : globalAvgDelta <= 0 ? 'var(--g)' : 'var(--r)', accent: globalAvgDelta !== null && globalAvgDelta <= 0 ? 'linear-gradient(90deg,var(--g2),var(--g))' : 'var(--border)' },
+              { label: 'Avg Weekly Δ', val: globalAvgDelta !== null ? `${globalAvgDelta > 0 ? '+' : ''}${globalAvgDelta.toFixed(1)}` : '—', unit: globalAvgDelta !== null ? 'lbs' : '', col: 'var(--text)', accent: 'var(--border)' },
             ].map(s => (
               <div key={s.label} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: '18px 20px', position: 'relative', overflow: 'hidden' }}>
                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: s.accent }} />
@@ -370,34 +391,60 @@ export default function CoachDashboard() {
           </div>
         )}
 
-        {/* ── New client form ── */}
+        {/* ── New account form (gated: only a signed-in coach reaches this) ── */}
         {showForm && (
           <div style={{ background: 'var(--bg2)', border: '1px solid var(--vbrd)', borderRadius: 18, padding: '26px 28px', marginBottom: 24 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '1.4px', textTransform: 'uppercase', color: 'var(--v2)', marginBottom: 22 }}>New Client Account</div>
-            <form onSubmit={createClient}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '1.4px', textTransform: 'uppercase', color: 'var(--v2)' }}>
+                {acctType === 'coach' ? 'New Coach Account' : 'New Client Account'}
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {['client', 'coach'].map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setAcctType(t)}
+                    style={{
+                      background: acctType === t ? 'var(--vbg)' : 'none',
+                      border: `1px solid ${acctType === t ? 'var(--vbrd)' : 'var(--border2)'}`,
+                      color: acctType === t ? 'var(--v2)' : 'var(--text3)',
+                      borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 800,
+                      textTransform: 'capitalize', minHeight: 36,
+                    }}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <form onSubmit={createAccount}>
               <div style={{ marginBottom: 14 }}>
                 <label style={LBL}>Full Name</label>
-                <input value={fullName} onChange={e => setFullName(e.target.value)} required placeholder="Client's full name" />
+                <input value={fullName} onChange={e => setFullName(e.target.value)} required placeholder={acctType === 'coach' ? "Coach's full name" : "Client's full name"} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                <div><label style={LBL}>Email</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="client@email.com" /></div>
+              <div className="coach-form-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div><label style={LBL}>Email</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="name@email.com" /></div>
                 <div><label style={LBL}>Temporary Password</label><input type="text" value={password} onChange={e => setPassword(e.target.value)} minLength={6} required placeholder="Min 6 chars" /></div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                <div><label style={LBL}>Start Weight (lbs)</label><input type="number" step="0.1" value={startWeight} onChange={e => setStartWeight(e.target.value)} placeholder="231.0" /></div>
-                <div><label style={LBL}>Goal Weight (lbs)</label><input type="number" step="0.1" value={goalWeight} onChange={e => setGoalWeight(e.target.value)} placeholder="215.0" /></div>
-              </div>
-              <div style={{ marginBottom: 22 }}>
-                <label style={LBL}>Current Phase / Goal</label>
-                <select value={phase} onChange={e => setPhase(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #3a332a', background: '#17140f', color: '#f2ede4', fontSize: 15 }}>
-                  <option value="Cut">Cut</option>
-                  <option value="Recomp">Recomp</option>
-                  <option value="Lean Bulk">Lean Bulk</option>
-                  <option value="Maintenance">Maintenance</option>
-                </select>
-              </div>
-              <button className="btn-primary" disabled={busy} type="submit" style={{ maxWidth: 260 }}>
-                {busy ? 'Creating…' : 'Create Client Account'}
+              {acctType === 'client' && (
+                <>
+                  <div className="coach-form-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div><label style={LBL}>Start Weight (lbs)</label><input type="number" step="0.1" value={startWeight} onChange={e => setStartWeight(e.target.value)} placeholder="231.0" /></div>
+                    <div><label style={LBL}>Goal Weight (lbs)</label><input type="number" step="0.1" value={goalWeight} onChange={e => setGoalWeight(e.target.value)} placeholder="215.0" /></div>
+                  </div>
+                  <div style={{ marginBottom: 22 }}>
+                    <label style={LBL}>Current Phase / Goal</label>
+                    <select value={phase} onChange={e => setPhase(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #3a332a', background: '#17140f', color: '#f2ede4', fontSize: 16, minHeight: 44 }}>
+                      <option value="Cut">Cut</option>
+                      <option value="Recomp">Recomp</option>
+                      <option value="Lean Bulk">Lean Bulk</option>
+                      <option value="Maintenance">Maintenance</option>
+                    </select>
+                  </div>
+                </>
+              )}
+              <button className="btn-primary" disabled={busy} type="submit" style={{ maxWidth: 260, minHeight: 44 }}>
+                {busy ? 'Creating…' : acctType === 'coach' ? 'Create Coach Account' : 'Create Client Account'}
               </button>
               {error && <div className="error-text" style={{ marginTop: 12 }}>{error}</div>}
               {info  && <div className="success-text" style={{ marginTop: 12 }}>✓ {info}</div>}
@@ -405,8 +452,8 @@ export default function CoachDashboard() {
           </div>
         )}
 
-        {/* ── Two-column layout ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
+        {/* ── Two-column layout (stacks on phones — see index.css) ── */}
+        <div className="coach-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
 
           {/* ── CLIENT CARDS ── */}
           <div>
@@ -425,13 +472,20 @@ export default function CoachDashboard() {
               </div>
             )}
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div className="coach-cards" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {clients.map(c => {
-                const progress  = (c.start_weight && c.goal_weight && c.lastWeight)
-                  ? Math.min(100, Math.max(0, ((+c.start_weight - +c.lastWeight.weight) / (+c.start_weight - +c.goal_weight)) * 100))
+                const cPhase = c.stats?.current_phase
+                const progress = (c.lastWeight)
+                  ? progressPctOf(c.start_weight, c.goal_weight, c.lastWeight.weight)
                   : null
-                const lostLbs   = (c.start_weight && c.lastWeight) ? (+c.start_weight - +c.lastWeight.weight).toFixed(1) : null
-                const toGoLbs   = (c.goal_weight && c.lastWeight)  ? Math.max(0, +c.lastWeight.weight - +c.goal_weight).toFixed(1) : null
+                const netLbs = (c.start_weight && c.lastWeight) ? (+c.lastWeight.weight - +c.start_weight) : null
+                const toGoLbs = (c.goal_weight && c.lastWeight) ? Math.abs(+c.lastWeight.weight - +c.goal_weight).toFixed(1) : null
+                const netCopy = netLbs === null ? null
+                  : normalizePhase(cPhase) === 'bulk'
+                    ? (netLbs > 0 ? `${netLbs.toFixed(1)} lbs gained` : netLbs < 0 ? `${Math.abs(netLbs).toFixed(1)} lbs lost` : 'Holding steady')
+                    : normalizePhase(cPhase) === 'cut'
+                      ? (netLbs < 0 ? `${Math.abs(netLbs).toFixed(1)} lbs lost` : netLbs > 0 ? `${netLbs.toFixed(1)} lbs gained` : 'Holding steady')
+                      : (netLbs !== 0 ? `${netLbs > 0 ? '+' : ''}${netLbs.toFixed(1)} lbs net` : 'Holding steady')
                 const hasRed    = c.alerts.some(a => a.severity === 'red')
                 const hasAmber  = c.alerts.some(a => a.severity === 'amber')
                 const borderCol = hasRed ? 'var(--rbrd)' : hasAmber ? 'var(--abrd)' : 'var(--border)'
@@ -492,11 +546,11 @@ export default function CoachDashboard() {
                       )}
 
                       {/* Metric grid: Weight / Recovery / Motivation / Compliance */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
+                      <div className="coach-metric-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
                         {/* Weight trend */}
                         <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '12px 10px' }}>
                           <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 5 }}>Weight Δ/wk</div>
-                          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.4px', color: sparkColor(c.weeklyDelta) }}>
+                          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.4px', color: deltaColor(c.weeklyDelta, cPhase) }}>
                             {c.weeklyDelta !== null ? `${c.weeklyDelta > 0 ? '+' : ''}${c.weeklyDelta.toFixed(1)}` : '—'}
                             {c.weeklyDelta !== null && <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--text3)' }}> lbs</span>}
                           </div>
@@ -505,12 +559,12 @@ export default function CoachDashboard() {
                           </div>
                         </div>
 
-                        {/* Recovery */}
+                        {/* Recovery — merged coach + client logs, normalized 0–100 */}
                         <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '12px 10px' }}>
                           <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 5 }}>Recovery</div>
-                          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.4px', color: c.avgRec === null ? 'var(--text3)' : c.avgRec >= 22 ? 'var(--g)' : c.avgRec >= 16 ? 'var(--a)' : 'var(--r)' }}>
+                          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.4px', color: c.avgRec === null ? 'var(--text3)' : c.avgRec >= 73 ? 'var(--g)' : c.avgRec >= 53 ? 'var(--a)' : 'var(--r)' }}>
                             {c.avgRec !== null ? c.avgRec.toFixed(0) : '—'}
-                            {c.avgRec !== null && <span style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 500 }}>/30</span>}
+                            {c.avgRec !== null && <span style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 500 }}>%</span>}
                           </div>
                           <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 3, fontWeight: 500 }}>7-day avg</div>
                         </div>
@@ -556,7 +610,7 @@ export default function CoachDashboard() {
                         <div style={{ marginBottom: 14 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>
                             <span>Progress to goal</span>
-                            <span>{progress.toFixed(0)}% · {lostLbs > 0 ? `${lostLbs} lbs lost` : 'No loss yet'} · {toGoLbs} to go</span>
+                            <span>{progress.toFixed(0)}% · {netCopy || 'No change yet'} · {toGoLbs} to go</span>
                           </div>
                           <div style={{ height: 6, background: 'var(--bg5)', borderRadius: 4, overflow: 'hidden' }}>
                             <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg,var(--v3),var(--v),#00cba9)', borderRadius: 4 }} />
@@ -576,7 +630,7 @@ export default function CoachDashboard() {
                         </div>
                         <button
                           onClick={() => navigate(`/coach/clients/${c.id}`)}
-                          style={{ background: 'var(--vbg)', border: '1px solid var(--vbrd)', color: 'var(--v2)', borderRadius: 9, padding: '9px 18px', fontSize: 13, fontWeight: 700 }}
+                          style={{ background: 'var(--vbg)', border: '1px solid var(--vbrd)', color: 'var(--v2)', borderRadius: 9, padding: '12px 18px', fontSize: 13, fontWeight: 700, minHeight: 44 }}
                         >
                           View Client →
                         </button>

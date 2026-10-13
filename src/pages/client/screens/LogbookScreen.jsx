@@ -1,10 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../../lib/supabase'
-
-function todayStr() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+import { localDateStr } from '../../../lib/dates'
 
 function todayLabel() {
   return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -59,7 +55,7 @@ export default function LogbookScreen({ profile }) {
         .from('client_pr_logs')
         .insert({
           client_id: profile.id,
-          log_date: todayStr(),
+          log_date: localDateStr(),
           session,
           exercise: exercise.trim(),
           set1: set1.trim() || null,

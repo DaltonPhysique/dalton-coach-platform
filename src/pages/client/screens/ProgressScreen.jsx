@@ -1,24 +1,87 @@
-import { useState } from 'react'
-import { DEMO_PRS, DEMO_CHECKIN_HISTORY, DEMO_COUNTDOWN } from '../demoData'
-import DemoBadge from '../components/DemoBadge'
+import { useState, useEffect } from 'react'
+import { supabase } from '../../../lib/supabase'
+import { localDateStr } from '../../../lib/dates'
+import { normalizePhase, netChangeLabel } from '../../../lib/phase'
+
+function fmtDate(dateStr) {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
 
 export default function ProgressScreen({
+  profile,
   weights,
   avg7,
+  phase,
+  goalWeight,
+  startWeight,
   weightInput,
   setWeightInput,
   weightBusy,
   onLogWeight,
 }) {
   const [tab, setTab] = useState('weight')
+  const [prs, setPrs] = useState([])
+  const [prsLoading, setPrsLoading] = useState(true)
 
-  const totalLost = weights.length
-    ? (weights[weights.length - 1]?.weight - weights[0]?.weight) * -1
-    : null
-  // weights is newest-first from the query; compute lost relative to oldest entry shown
+  useEffect(() => {
+    async function loadPrs() {
+      if (!profile?.id) { setPrsLoading(false); return }
+      try {
+        const { data } = await supabase
+          .from('client_pr_logs')
+          .select('id, log_date, session, exercise, set1, set2, notes')
+          .eq('client_id', profile.id)
+          .order('log_date', { ascending: false })
+          .limit(20)
+        setPrs(data || [])
+      } catch {
+        setPrs([]) // table missing — honest empty state below
+      } finally {
+        setPrsLoading(false)
+      }
+    }
+    loadPrs()
+  }, [profile?.id])
+
+  // weights is newest-first from the query.
   const oldest = weights[weights.length - 1]
   const newest = weights[0]
-  const lost = oldest && newest ? (Number(oldest.weight) - Number(newest.weight)) : null
+  const recentDelta = oldest && newest ? Number(oldest.weight) - Number(newest.weight) : null
+  // True lifetime change off start_weight when we have it (the old code
+  // only looked at the last 14 logged entries and called it "Total Lost").
+  const lifetimeDelta = startWeight && newest
+    ? Number(startWeight) - Number(newest.weight)
+    : recentDelta
+  const netLabel = netChangeLabel(phase)
+  const p = normalizePhase(phase)
+  const netVal = lifetimeDelta
+  // In a cut, loss (positive delta) is good; in a bulk, gain (negative
+  // delta) is good; recomp/maintenance read neutral unless the swing is big.
+  const netColor = netVal === null ? undefined
+    : p === 'cut' ? (netVal > 0 ? 'var(--g)' : netVal < 0 ? 'var(--r)' : undefined)
+    : p === 'bulk' ? (netVal < 0 ? 'var(--g)' : netVal > 0 ? 'var(--r)' : undefined)
+    : Math.abs(netVal) <= 2 ? undefined : 'var(--a)'
+
+  // ── Countdown: real goal math, phase-aware ──────────────────────────
+  const g = Number(goalWeight)
+  const c = avg7
+  let countdown = null
+  if (g && c) {
+    if (p === 'recomp' || p === 'maintenance') {
+      countdown = { mode: 'hold' }
+    } else {
+      const remaining = p === 'bulk' ? Math.max(0, g - c) : Math.max(0, c - g)
+      const weeks = Math.ceil(remaining) // ~1 lb/week pace
+      const arrival = new Date()
+      arrival.setDate(arrival.getDate() + weeks * 7)
+      countdown = {
+        mode: 'goal',
+        remaining: remaining.toFixed(1),
+        weeks,
+        arrival: arrival.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+      }
+    }
+  }
 
   return (
     <div>
@@ -57,9 +120,9 @@ export default function ProgressScreen({
               <div className="stat-value">{avg7 ? avg7.toFixed(1) : '—'}</div>
             </div>
             <div className="stat-box">
-              <div className="stat-label">Total Lost</div>
-              <div className="stat-value" style={{ color: lost > 0 ? 'var(--g)' : undefined }}>
-                {lost !== null ? `${lost.toFixed(1)} lbs` : '—'}
+              <div className="stat-label">{netLabel}</div>
+              <div className="stat-value" style={{ color: netColor }}>
+                {netVal !== null ? `${Math.abs(netVal).toFixed(1)} lbs` : '—'}
               </div>
             </div>
           </div>
@@ -81,54 +144,85 @@ export default function ProgressScreen({
 
       {tab === 'prs' && (
         <div className="card">
-          <DemoBadge label="Demo data — PR tracker not yet connected" />
-          {DEMO_PRS.map((pr, i) => (
-            <div className="v2-entry-card" key={i}>
-              <div className="v2-entry-top">
-                <span className="v2-entry-date">{pr.date}</span>
-                <span className="v2-entry-tag upper">{pr.tag}</span>
+          <div className="v2-card-eyebrow" style={{ marginBottom: 14 }}>Personal Records</div>
+          {prsLoading ? (
+            <div className="empty-state">Loading…</div>
+          ) : prs.length === 0 ? (
+            <div className="empty-state">No PRs logged yet. Log them from the Log tab.</div>
+          ) : (
+            prs.map((pr) => (
+              <div className="v2-entry-card" key={pr.id}>
+                <div className="v2-entry-top">
+                  <span className="v2-entry-date">{fmtDate(pr.log_date)}</span>
+                  {pr.session && <span className="v2-entry-tag upper">{pr.session}</span>}
+                </div>
+                <div className="v2-entry-name">{pr.exercise}</div>
+                <div className="v2-entry-meta">
+                  {[pr.set1, pr.set2].filter(Boolean).join(' · ')}
+                  {pr.notes ? ` — ${pr.notes}` : ''}
+                </div>
               </div>
-              <div className="v2-entry-name">{pr.exercise}</div>
-              <div className="v2-entry-meta">{pr.detail}</div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       )}
 
       {tab === 'checkin' && (
         <div className="card">
-          <DemoBadge label="Demo data — weekly check-in not yet connected" />
-          {DEMO_CHECKIN_HISTORY.map((c, i) => (
-            <div key={i}>
-              <div className="v2-card-eyebrow" style={{ marginBottom: 10 }}>{c.week}</div>
-              <div className="log-list">
-                <div className="log-row"><span className="date">Training</span><span className="val">{'⭐'.repeat(c.training)}</span></div>
-                <div className="log-row"><span className="date">Nutrition</span><span className="val">{'⭐'.repeat(c.nutrition)}</span></div>
-                <div className="log-row"><span className="date">Sleep</span><span className="val">{'⭐'.repeat(c.sleep)}</span></div>
-                <div className="log-row"><span className="date">Feeling</span><span className="val">{'⭐'.repeat(c.feeling)}</span></div>
-              </div>
-            </div>
-          ))}
+          <div className="v2-card-eyebrow" style={{ marginBottom: 14 }}>Weekly Check-In</div>
+          <div className="empty-state">
+            Weekly check-ins live here once your coach sets them up. Your daily
+            weigh-ins, recovery scores, and checklist are already feeding your
+            coach's dashboard.
+          </div>
         </div>
       )}
 
       {tab === 'countdown' && (
         <div className="card">
-          <DemoBadge label="Demo data — countdown not yet connected to live goal math" />
-          <div className="v2-card-eyebrow">Remaining to Phase 1 Goal</div>
-          <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: '-1.5px', margin: '8px 0' }}>
-            {DEMO_COUNTDOWN.remainingLbs}<span style={{ fontSize: 20, color: 'var(--text3)', fontWeight: 500 }}> lbs</span>
-          </div>
-          <div className="stat-grid">
-            <div className="stat-box">
-              <div className="stat-label">Weeks @ 1/wk</div>
-              <div className="stat-value">{DEMO_COUNTDOWN.weeksAtOnePerWeek}</div>
-            </div>
-            <div className="stat-box">
-              <div className="stat-label">Est. Arrival</div>
-              <div className="stat-value" style={{ fontSize: 18 }}>{DEMO_COUNTDOWN.estimatedDate}</div>
-            </div>
-          </div>
+          {!countdown ? (
+            <>
+              <div className="v2-card-eyebrow" style={{ marginBottom: 14 }}>Countdown</div>
+              <div className="empty-state">No goal set yet — your coach will set your phase target.</div>
+            </>
+          ) : countdown.mode === 'hold' ? (
+            <>
+              <div className="v2-card-eyebrow" style={{ marginBottom: 14 }}>
+                {p === 'recomp' ? 'Recomposition' : 'Maintenance'}
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.6 }}>
+                The scale staying flat is the plan.
+                {c ? <> You're holding <span style={{ color: 'var(--g)' }}>{c.toFixed(1)} lbs</span>.</> : null}
+              </div>
+              <p className="muted" style={{ marginTop: 10 }}>
+                {p === 'recomp'
+                  ? 'Progress shows up in strength, photos, and measurements — not the scale.'
+                  : 'Stay within ±2 lbs of your set point and you\'re winning.'}
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="v2-card-eyebrow">
+                {p === 'bulk' ? 'Remaining to Bulk Target' : 'Remaining to Phase Goal'}
+              </div>
+              <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: '-1.5px', margin: '8px 0' }}>
+                {countdown.remaining}<span style={{ fontSize: 20, color: 'var(--text3)', fontWeight: 500 }}> lbs</span>
+              </div>
+              <div className="stat-grid">
+                <div className="stat-box">
+                  <div className="stat-label">Weeks @ ~1/wk</div>
+                  <div className="stat-value">{countdown.weeks}</div>
+                </div>
+                <div className="stat-box">
+                  <div className="stat-label">Est. Arrival</div>
+                  <div className="stat-value" style={{ fontSize: 18 }}>{countdown.arrival}</div>
+                </div>
+              </div>
+              <p className="muted" style={{ marginTop: 10 }}>
+                Based on your 7-day average of {c.toFixed(1)} lbs as of {localDateStr()}.
+              </p>
+            </>
+          )}
         </div>
       )}
     </div>

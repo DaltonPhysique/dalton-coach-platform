@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { localDateStr } from '../../../lib/dates'
 
 const SLIDERS = [
   { key: 'sleep', label: 'Sleep Quality', low: 'Terrible', high: 'Excellent' },
@@ -13,11 +14,6 @@ const NEUTRAL = { sleep: 3, energy: 3, soreness: 3, stress: 3, digestion: 3 }
 
 function score(r) {
   return r.sleep + r.energy + r.soreness + r.stress + r.digestion
-}
-
-function todayStr() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function fmtDate(dateStr) {
@@ -43,7 +39,7 @@ export default function RecoveryScreen({ profile }) {
         const { data: today, error: todayErr } = await supabase
           .from('client_recovery_logs').select('sleep, energy, soreness, stress, digestion')
           .eq('client_id', profile.id)
-          .eq('log_date', todayStr())
+          .eq('log_date', localDateStr())
           .maybeSingle()
         if (todayErr) throw todayErr
         if (today) setValues({ sleep: today.sleep, energy: today.energy, soreness: today.soreness, stress: today.stress, digestion: today.digestion })
@@ -72,14 +68,14 @@ export default function RecoveryScreen({ profile }) {
       const { error } = await supabase
         .from('client_recovery_logs')
         .upsert(
-          { client_id: profile.id, log_date: todayStr(), ...values },
+          { client_id: profile.id, log_date: localDateStr(), ...values },
           { onConflict: 'client_id,log_date' }
         )
       if (error) throw error
       setSaveMsg('Saved ✓')
       setHistory(h => {
-        const rest = h.filter(r => r.log_date !== todayStr())
-        return [{ log_date: todayStr(), ...values }, ...rest].slice(0, 7)
+        const rest = h.filter(r => r.log_date !== localDateStr())
+        return [{ log_date: localDateStr(), ...values }, ...rest].slice(0, 7)
       })
     } catch (e) {
       if (isMissingTable(e)) {

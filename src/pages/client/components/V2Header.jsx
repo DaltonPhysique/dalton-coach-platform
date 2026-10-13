@@ -6,7 +6,9 @@ export default function V2Header({ fullName, phase }) {
           <img src="/rebuild-logo.png" alt="The Rebuild" />
         </div>
         <div>
-          <div className="v2-logo-name">{fullName || 'Dalton'}</div>
+          {/* Never fall back to the coach's name — a failed profile load
+              must not render as someone else's account. */}
+          <div className="v2-logo-name">{fullName || 'Athlete'}</div>
           <div className="v2-logo-sub">The Rebuild</div>
         </div>
       </div>

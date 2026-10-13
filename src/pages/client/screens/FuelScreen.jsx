@@ -4,10 +4,19 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType }) {
   const carbs = dayType === 'training' ? nutritionPlan?.training_carbs : nutritionPlan?.rest_carbs
   const fat = dayType === 'training' ? nutritionPlan?.training_fat : nutritionPlan?.rest_fat
 
-  const totalG = (Number(protein) || 0) + (Number(carbs) || 0) + (Number(fat) || 0)
-  const pPct = totalG ? Math.round((protein / totalG) * 100) : 0
-  const cPct = totalG ? Math.round((carbs / totalG) * 100) : 0
-  const fPct = totalG ? Math.round((fat / totalG) * 100) : 0
+  const p = Number(protein) || 0
+  const c = Number(carbs) || 0
+  const f = Number(fat) || 0
+  // Macro split as % of CALORIES (protein×4, carbs×4, fat×9) — the old
+  // code used % of grams, which underweights fat nearly 2.3×.
+  const pCal = p * 4
+  const cCal = c * 4
+  const fCal = f * 9
+  const totalCal = pCal + cCal + fCal
+  const pPct = totalCal ? Math.round((pCal / totalCal) * 100) : 0
+  const cPct = totalCal ? Math.round((cCal / totalCal) * 100) : 0
+  const fPct = totalCal ? Math.round((fCal / totalCal) * 100) : 0
+  const totalG = p + c + f
 
   return (
     <div>
@@ -56,9 +65,9 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType }) {
               </div>
             </div>
 
-            {totalG > 0 && (
+            {totalCal > 0 && (
               <>
-                <div className="v2-card-eyebrow" style={{ marginBottom: 14 }}>Macro Split</div>
+                <div className="v2-card-eyebrow" style={{ marginBottom: 14 }}>Macro Split <span style={{ textTransform: 'none', letterSpacing: 0 }}>· % of calories</span></div>
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 14 }}>
                     <span>Protein</span><span style={{ fontWeight: 700 }}>{protein}g — {pPct}%</span>

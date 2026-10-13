@@ -11,6 +11,6 @@ export const DEFAULT_CHECKLIST = [
   'Pre-training carbs hit',
   'Post-workout shake',
   'Dinner logged',
-  'Hit 220g protein for the day',
+  'Hit your protein target for the day',
   'Magnesium + Zinc before bed',
 ]
