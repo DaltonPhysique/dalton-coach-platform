@@ -100,8 +100,10 @@ export default function ClientDetail() {
       setNForm({
         training_cal: data.training_cal ?? '', training_protein: data.training_protein ?? '',
         training_carbs: data.training_carbs ?? '', training_fat: data.training_fat ?? '',
+        training_fiber: data.training_fiber ?? '',
         rest_cal: data.rest_cal ?? '', rest_protein: data.rest_protein ?? '',
-        rest_carbs: data.rest_carbs ?? '', rest_fat: data.rest_fat ?? '', notes: data.notes ?? '',
+        rest_carbs: data.rest_carbs ?? '', rest_fat: data.rest_fat ?? '',
+        rest_fiber: data.rest_fiber ?? '', notes: data.notes ?? '',
       })
     }
   }
@@ -118,8 +120,10 @@ export default function ClientDetail() {
       client_id: clientId, created_by: profile.id, active: true,
       training_cal: nForm.training_cal || null, training_protein: nForm.training_protein || null,
       training_carbs: nForm.training_carbs || null, training_fat: nForm.training_fat || null,
+      training_fiber: nForm.training_fiber || null,
       rest_cal: nForm.rest_cal || null, rest_protein: nForm.rest_protein || null,
       rest_carbs: nForm.rest_carbs || null, rest_fat: nForm.rest_fat || null,
+      rest_fiber: nForm.rest_fiber || null,
       notes: nForm.notes || null,
     }).select().single()
     setNBusy(false)
@@ -659,7 +663,7 @@ export default function ClientDetail() {
                   <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--v2)' }}>Training Day</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-                  {[['training_cal','Calories'],['training_protein','Protein (g)'],['training_carbs','Carbs (g)'],['training_fat','Fat (g)']].map(([k,l]) => (
+                  {[['training_cal','Calories'],['training_protein','Protein (g)'],['training_carbs','Carbs (g)'],['training_fat','Fat (g)'],['training_fiber','Fiber (g)']].map(([k,l]) => (
                     <div key={k}><label style={LBL}>{l}</label><input type="number" value={nForm[k]} onChange={e => setNForm({...nForm,[k]:e.target.value})} placeholder="—" /></div>
                   ))}
                 </div>
@@ -670,7 +674,7 @@ export default function ClientDetail() {
                   <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--a)' }}>Rest Day</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-                  {[['rest_cal','Calories'],['rest_protein','Protein (g)'],['rest_carbs','Carbs (g)'],['rest_fat','Fat (g)']].map(([k,l]) => (
+                  {[['rest_cal','Calories'],['rest_protein','Protein (g)'],['rest_carbs','Carbs (g)'],['rest_fat','Fat (g)'],['rest_fiber','Fiber (g)']].map(([k,l]) => (
                     <div key={k}><label style={LBL}>{l}</label><input type="number" value={nForm[k]} onChange={e => setNForm({...nForm,[k]:e.target.value})} placeholder="—" /></div>
                   ))}
                 </div>
