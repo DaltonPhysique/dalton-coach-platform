@@ -29,9 +29,12 @@ export default function NutritionAssign({ clientId }) {
   const [foodDate, setFoodDate] = useState(localDateStr())
   const [foodLogs, setFoodLogs] = useState([])
   const [foodOk, setFoodOk] = useState(true)
+  const [chatLogs, setChatLogs] = useState([])
+  const [chatOk, setChatOk] = useState(true)
 
   useEffect(() => { if (profile && clientId) { load(); } }, [profile, clientId])
   useEffect(() => { if (clientId && foodDate) loadFood() }, [clientId, foodDate])
+  useEffect(() => { if (clientId) loadChat() }, [clientId])
 
   async function load() {
     try {
@@ -128,6 +131,17 @@ export default function NutritionAssign({ clientId }) {
       setFoodLogs(data || [])
       setFoodOk(true)
     } catch { setFoodOk(false) }
+  }
+
+  async function loadChat() {
+    try {
+      const { data, error } = await supabase.from('ai_chat_logs')
+        .select('role, message, created_at').eq('client_id', clientId)
+        .order('created_at', { ascending: false }).limit(20)
+      if (error) throw error
+      setChatLogs(data || [])
+      setChatOk(true)
+    } catch { setChatOk(false) }
   }
 
   const foodTotals = (foodLogs || []).reduce((t, l) => ({
@@ -261,6 +275,36 @@ export default function NutritionAssign({ clientId }) {
               )
             })}
           </>)}
+        </div>
+      )}
+      {chatOk && (
+        <div style={{ ...SECTION, marginTop: 14 }}>
+          <div style={EYEBROW}>AI chat — read only</div>
+          {chatLogs.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--text3)' }}>
+              No AI chats yet. Runs on ai_chat_logs — set up with the ai-coach migration.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 400, overflowY: 'auto' }}>
+              {chatLogs.map((m, i) => (
+                <div key={i} style={{
+                  alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                  maxWidth: '90%',
+                  background: m.role === 'user' ? 'var(--vbg)' : 'var(--bg4)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 12,
+                  padding: '9px 12px',
+                  fontSize: 13, lineHeight: 1.45, color: 'var(--text)',
+                  whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+                }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.6px', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 4 }}>
+                    {m.role === 'user' ? 'Client' : 'Food coach'} · {new Date(m.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                  </div>
+                  {m.message}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
