@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import ClientDashboard from './pages/client/ClientDashboard'
 import CoachDashboard from './pages/coach/CoachDashboard'
 import ClientDetail from './pages/coach/ClientDetail'
+import MesocycleTemplates from './pages/coach/MesocycleTemplates'
 
 function FullScreenLoader() {
   return (
@@ -87,6 +88,15 @@ function AppRoutes() {
         element={
           <RequireAuth role="coach">
             <CoachDashboard />
+          </RequireAuth>
+        }
+      />
+
+      <Route
+        path="/coach/templates"
+        element={
+          <RequireAuth role="coach">
+            <MesocycleTemplates />
           </RequireAuth>
         }
       />
