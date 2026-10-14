@@ -540,6 +540,9 @@ input, select, textarea { font-size: 16px; }
   .tpl-ex-grid { grid-template-columns: repeat(3, 1fr) !important; }
   .tpl-ex-grid > input:first-child { grid-column: 1 / -1; }
 
+  /* Nutrition day-type editor: 5 inputs → 2 across on phones */
+  .nutri-day-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
   /* Prevent the client-card header from overflowing */
   .coach-cards { overflow: hidden; }
 }
