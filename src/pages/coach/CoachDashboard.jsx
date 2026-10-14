@@ -274,8 +274,16 @@ export default function CoachDashboard() {
     // Seed the client's phase so the app header badge is correct from day one.
     // (Brand-new clients have no stats row yet, so a plain insert is safe.)
     const newUserId = signUpData?.user?.id
-    if (!isCoach && newUserId && phase) {
-      await supabase.from('coach_client_stats').insert({ client_id: newUserId, current_phase: phase })
+    if (newUserId) {
+      if (isCoach) {
+        // New signups always land as 'client' (security: the DB trigger ignores
+        // the role claim). Promote now that the coach session is restored.
+        const { error: promoteError } = await supabase.from('profiles')
+          .update({ role: 'coach' }).eq('id', newUserId)
+        if (promoteError) { setBusy(false); setError('Account created, but role promotion failed: ' + promoteError.message); return }
+      } else if (phase) {
+        await supabase.from('coach_client_stats').insert({ client_id: newUserId, current_phase: phase })
+      }
     }
     setBusy(false)
     setInfo(isCoach
