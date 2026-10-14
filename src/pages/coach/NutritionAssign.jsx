@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../lib/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { DAY_LABELS } from '../../lib/nutrition'
+import { localDateStr } from '../../lib/dates'
+import { MEALS, MEAL_LABELS } from '../../lib/fooddb'
 
 const EYEBROW = { fontSize: 10, fontWeight: 800, letterSpacing: '1.2px', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 8 }
 const LBL = { display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: '.8px', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 7 }
@@ -24,8 +26,12 @@ export default function NutritionAssign({ clientId }) {
   const [gLists, setGLists] = useState([])
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
+  const [foodDate, setFoodDate] = useState(localDateStr())
+  const [foodLogs, setFoodLogs] = useState([])
+  const [foodOk, setFoodOk] = useState(true)
 
   useEffect(() => { if (profile && clientId) { load(); } }, [profile, clientId])
+  useEffect(() => { if (clientId && foodDate) loadFood() }, [clientId, foodDate])
 
   async function load() {
     try {
@@ -113,6 +119,24 @@ export default function NutritionAssign({ clientId }) {
     setBusy(false)
   }
 
+  async function loadFood() {
+    try {
+      const { data, error } = await supabase.from('food_logs')
+        .select('*').eq('client_id', clientId).eq('log_date', foodDate)
+        .order('created_at', { ascending: true })
+      if (error) throw error
+      setFoodLogs(data || [])
+      setFoodOk(true)
+    } catch { setFoodOk(false) }
+  }
+
+  const foodTotals = (foodLogs || []).reduce((t, l) => ({
+    calories: t.calories + (Number(l.calories) || 0),
+    protein_g: t.protein_g + (Number(l.protein_g) || 0),
+    carbs_g: t.carbs_g + (Number(l.carbs_g) || 0),
+    fat_g: t.fat_g + (Number(l.fat_g) || 0),
+  }), { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 })
+
   return (
     <div style={{ marginBottom: 22 }}>
       <div style={SECTION}>
@@ -190,6 +214,55 @@ export default function NutritionAssign({ clientId }) {
       </div>
 
       {msg && <div style={{ fontSize: 13, fontWeight: 700, color: msg.startsWith('✓') ? 'var(--g)' : 'var(--r)' }}>{msg}</div>}
+
+      {foodOk && (
+        <div style={{ ...SECTION, marginTop: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+            <div style={EYEBROW}>Food log — read only</div>
+            <input type="date" value={foodDate} max={localDateStr()} onChange={e => setFoodDate(e.target.value)}
+              style={{ fontSize: 13, padding: '8px 10px' }} />
+          </div>
+          {foodLogs.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--text3)' }}>Nothing logged on this date.</div>
+          ) : (<>
+            <div style={{ background: 'var(--bg4)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', marginBottom: 12, fontSize: 13 }}>
+              <strong style={{ color: 'var(--text)' }}>{Math.round(foodTotals.calories)} cal</strong>
+              <span style={{ color: 'var(--text2)' }}> · {Math.round(foodTotals.protein_g * 10) / 10}g P · {Math.round(foodTotals.carbs_g * 10) / 10}g C · {Math.round(foodTotals.fat_g * 10) / 10}g F</span>
+              {current?.template && (current.days || []).length > 0 && (
+                <div style={{ marginTop: 8, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {['training', 'legs', 'rest'].map(dt => {
+                    const d = current.days.find(x => x.day_type === dt)
+                    if (!d) return null
+                    const rc = Math.round((Number(d.calories) || 0) - foodTotals.calories)
+                    return (
+                      <span key={dt} style={{ fontSize: 12, color: 'var(--text3)' }}>
+                        <strong style={{ color: 'var(--text2)' }}>{DAY_LABELS[dt]}</strong> target {d.calories} → <span style={{ color: rc < 0 ? 'var(--r)' : 'var(--g)', fontWeight: 700 }}>{rc} left</span>
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            {MEALS.map(m => {
+              const items = foodLogs.filter(l => l.meal === m)
+              if (!items.length) return null
+              return (
+                <div key={m} style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.6px', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 4 }}>
+                    {MEAL_LABELS[m]}
+                  </div>
+                  {items.map(l => (
+                    <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '8px 2px', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+                      <span style={{ color: 'var(--text)' }}>{l.description} <span style={{ color: 'var(--text3)' }}>· {Number(l.grams)}g</span></span>
+                      <span style={{ color: 'var(--text2)', flexShrink: 0 }}>{l.calories} cal</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+          </>)}
+        </div>
+      )}
     </div>
   )
 }
