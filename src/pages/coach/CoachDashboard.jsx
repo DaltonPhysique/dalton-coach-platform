@@ -335,20 +335,20 @@ export default function CoachDashboard() {
       <div className="coach-content" style={{ maxWidth: 1160, margin: '0 auto', padding: '28px 28px' }}>
 
         {/* ── Page heading ── */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div className="coach-heading" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
           <div>
             <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-.8px', lineHeight: 1.1 }}>Command Center</div>
             <div style={{ fontSize: 14, color: 'var(--text2)', marginTop: 5, fontWeight: 500 }}>
               {loading ? 'Loading roster…' : `${activeCount} ${activeCount === 1 ? 'client' : 'clients'} · ${totalAlerts} active alert${totalAlerts !== 1 ? 's' : ''}`}
             </div>
             {!loading && activeCount > 0 && (
-              <div style={{ display: 'flex', gap: 14, marginTop: 10 }}>
+              <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap' }}>
                 {[
                   { n: statusCounts.green, label: 'on track', dot: 'var(--g)' },
                   { n: statusCounts.amber, label: 'needs attention', dot: 'var(--a)' },
                   { n: statusCounts.red, label: 'at risk', dot: 'var(--r)' },
                 ].map(s => (
-                  <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap' }}>
                     <div style={{ width: 9, height: 9, borderRadius: '50%', background: s.dot, boxShadow: `0 0 8px ${s.dot}` }} />
                     <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>{s.n}</span>
                     <span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 500 }}>{s.label}</span>
@@ -357,6 +357,7 @@ export default function CoachDashboard() {
               </div>
             )}
           </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
             onClick={() => { setShowForm(v => !v); setError(''); setInfo('') }}
             style={{
@@ -379,6 +380,7 @@ export default function CoachDashboard() {
           >
             🏋️ Templates
           </button>
+          </div>
         </div>
 
         {/* ── Global KPI bar ── */}
