@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { DAY_TYPES, DAY_LABELS, resolveDayType, inferDayTypeFromLogs, todaysMacros } from '../../../lib/nutrition'
 import { localDateStr } from '../../../lib/dates'
@@ -378,6 +378,182 @@ function FoodSheet({ clientId, onClose, onAdded }) {
   )
 }
 
+// ── AI food coach chat ("me in your pocket 24/7") ──────────
+// Context (targets, consumed, remaining, day type) is built here
+// and sent to /.netlify/functions/ai-coach with the session token.
+// The function verifies the client, calls Anthropic, and saves
+// both messages to ai_chat_logs. If the table or the function
+// isn't set up yet, this degrades to an honest quiet state.
+function FoodCoachChat({ clientId, targets, dayLabel, coachNote, clientName }) {
+  const [msgs, setMsgs] = useState([])
+  const [input, setInput] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [ready, setReady] = useState(null) // null = checking, true/false
+  const [err, setErr] = useState('')
+  const [phase, setPhase] = useState('')
+  const bottomRef = useRef(null)
+
+  useEffect(() => {
+    if (!clientId) return
+    load()
+  }, [clientId])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [msgs, busy])
+
+  async function load() {
+    try {
+      const { data, error } = await supabase.from('ai_chat_logs')
+        .select('role, message, created_at')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false })
+        .limit(20)
+      if (error) throw error
+      setMsgs((data || []).reverse())
+      setReady(true)
+    } catch {
+      setReady(false) // table missing until migration — stay quiet
+    }
+    try {
+      const { data } = await supabase.from('coach_client_stats')
+        .select('current_phase').eq('client_id', clientId).maybeSingle()
+      if (data?.current_phase) setPhase(data.current_phase)
+    } catch { /* non-fatal */ }
+  }
+
+  async function send() {
+    const text = input.trim()
+    if (!text || busy) return
+    setBusy(true); setErr(''); setInput('')
+    const userMsg = { role: 'user', message: text, created_at: new Date().toISOString() }
+    setMsgs(m => [...m, userMsg])
+
+    try {
+      // today's consumed totals → remaining
+      let consumed = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }
+      try {
+        const { data: logs } = await supabase.from('food_logs')
+          .select('calories, protein_g, carbs_g, fat_g')
+          .eq('client_id', clientId).eq('log_date', localDateStr())
+        consumed = sumLogs(logs || [])
+      } catch { /* consumed stays 0 */ }
+
+      const t = targets || {}
+      const r = v => Math.round(v * 10) / 10
+      const remaining = t.calories != null ? {
+        calories: Math.round((Number(t.calories) || 0) - consumed.calories),
+        protein_g: r((Number(t.protein_g) || 0) - consumed.protein_g),
+        carbs_g: r((Number(t.carbs_g) || 0) - consumed.carbs_g),
+        fat_g: r((Number(t.fat_g) || 0) - consumed.fat_g),
+      } : null
+
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess?.session?.access_token
+      if (!token) throw new Error('signed_out')
+
+      const resp = await fetch('/.netlify/functions/ai-coach', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          message: text,
+          context: {
+            clientName, phase, dayType: dayLabel,
+            targets: t.calories != null ? {
+              calories: Number(t.calories) || 0,
+              protein_g: Number(t.protein_g) || 0,
+              carbs_g: Number(t.carbs_g) || 0,
+              fat_g: Number(t.fat_g) || 0,
+            } : null,
+            consumed, remaining, coachNote: coachNote || null,
+          },
+        }),
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(data.error || 'failed')
+
+      setMsgs(m => [...m, { role: 'assistant', message: data.reply, created_at: new Date().toISOString() }])
+    } catch (e) {
+      setMsgs(m => m.filter(x => x !== userMsg))
+      setErr(
+        e.message === 'not_configured'
+          ? "The food coach isn't connected yet — your coach is setting it up."
+          : e.message === 'rate_limited'
+            ? "You've hit today's chat limit — it resets at midnight."
+            : e.message === 'signed_out'
+              ? "You're signed out — log back in to chat."
+              : "Couldn't reach the food coach — try again in a bit."
+      )
+    }
+    setBusy(false)
+  }
+
+  if (ready === false) return null // migration not run yet
+
+  return (
+    <div className="card" style={{ marginBottom: 14 }}>
+      <div className="v2-card-eyebrow" style={{ marginBottom: 4 }}>🤖 Food coach</div>
+      <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>
+        Me in your pocket 24/7 — I know your targets and what's left today.
+      </div>
+
+      <div style={{ maxHeight: 320, overflowY: 'auto', marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {ready === null && <div style={{ fontSize: 13, color: 'var(--text3)' }}>Loading…</div>}
+        {ready === true && msgs.length === 0 && (
+          <div className="empty-state" style={{ padding: '18px 12px' }}>
+            <div className="icon">💬</div>
+            Ask me what to eat — tell me what you've got and I'll fit it into your remaining macros.
+          </div>
+        )}
+        {msgs.map((m, i) => (
+          <div key={i} style={{
+            alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+            maxWidth: '85%',
+            background: m.role === 'user' ? 'var(--vbg)' : 'var(--bg3)',
+            border: '1px solid var(--border)',
+            borderRadius: 14,
+            borderTopRightRadius: m.role === 'user' ? 4 : 14,
+            borderTopLeftRadius: m.role === 'user' ? 14 : 4,
+            padding: '10px 13px',
+            fontSize: 14, lineHeight: 1.45, color: 'var(--text)',
+            whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+          }}>
+            {m.message}
+          </div>
+        ))}
+        {busy && (
+          <div style={{
+            alignSelf: 'flex-start', background: 'var(--bg3)', border: '1px solid var(--border)',
+            borderRadius: 14, borderTopLeftRadius: 4, padding: '12px 16px', fontSize: 14, color: 'var(--text3)',
+          }}>
+            <span className="typing-dots"><span>.</span><span>.</span><span>.</span></span>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {err && (
+        <div style={{ fontSize: 13, color: 'var(--r)', fontWeight: 600, marginBottom: 10 }}>{err}</div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') send() }}
+          placeholder="What've you got to eat?"
+          style={{ ...inputLg, flex: 1, minWidth: 0, margin: 0 }}
+          disabled={busy}
+        />
+        <button onClick={send} disabled={busy || !input.trim()} className="btn-primary"
+          style={{ maxWidth: 84, padding: '12px 0', fontSize: 14, flexShrink: 0 }}>
+          {busy ? '…' : 'Send'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function FuelScreen({ nutritionPlan, dayType, setDayType, profile }) {
   const [tplDays, setTplDays] = useState(null) // null = no template → legacy UI
   const [tplName, setTplName] = useState('')
@@ -589,6 +765,14 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType, profile
 
         <FoodLog clientId={profile.id} targets={targets} onLog={() => setSheetOpen(true)} refreshKey={foodBump} />
 
+        <FoodCoachChat
+          clientId={profile.id}
+          targets={targets}
+          dayLabel={DAY_LABELS[resolved]}
+          coachNote={tplNotes}
+          clientName={profile?.full_name}
+        />
+
         {grocery.map(g => (
           <div className="card" key={g.listId} style={{ marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -739,6 +923,15 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType, profile
 
       <div style={{ marginTop: 14 }}>
         <FoodLog clientId={profile?.id} targets={legacyTargets} onLog={() => setSheetOpen(true)} refreshKey={foodBump} />
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <FoodCoachChat
+          clientId={profile?.id}
+          targets={legacyTargets}
+          dayLabel={dayType === 'training' ? 'Training' : 'Rest'}
+          coachNote={nutritionPlan?.notes}
+          clientName={profile?.full_name}
+        />
       </div>
       {foodSheet}
     </div>
