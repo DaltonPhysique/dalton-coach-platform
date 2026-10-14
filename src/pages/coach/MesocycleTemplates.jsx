@@ -178,7 +178,7 @@ export default function MesocycleTemplates() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '26px 28px' }}>
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '26px 28px', paddingTop: 'max(26px, env(safe-area-inset-top))' }}>
         <button onClick={() => navigate('/coach')}
           style={{ background: 'var(--bg4)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 13px', color: 'var(--text2)', fontSize: 12, fontWeight: 700, marginBottom: 20 }}>
           ← Command Center
