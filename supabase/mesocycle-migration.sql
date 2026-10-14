@@ -32,6 +32,7 @@ create table if not exists template_exercises (
   rep_max int not null check (rep_max >= rep_min),
   target_rir int not null check (target_rir between 0 and 5),
   start_weight numeric not null default 0,
+  notes text,
   sort_order int not null default 0
 );
 
