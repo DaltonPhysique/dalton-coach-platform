@@ -60,13 +60,16 @@ export default function ClientDetail() {
   const [noteBusy,    setNoteBusy]   = useState(false)
   const [activeMeso,  setActiveMeso] = useState(null)
   const [nutriAssign, setNutriAssign]= useState(null)
+  const [mealText,   setMealText]   = useState('')
+  const [mealBusy,   setMealBusy]   = useState(false)
+  const [mealSaved,  setMealSaved]  = useState(false)
   const [checklist,   setChecklist]  = useState([])
   const [checklistText, setChecklistText] = useState('')
   const [checklistBusy, setChecklistBusy] = useState(false)
 
   useEffect(() => {
     loadClient(); loadWeights(); loadPhotos(); loadNutritionPlan(); loadTrainingPlan()
-    loadStats(); loadRecLogs(); loadNotes(); loadChecklist(); loadActiveMeso(); loadNutriAssign()
+    loadStats(); loadRecLogs(); loadNotes(); loadChecklist(); loadActiveMeso(); loadNutriAssign(); loadMealPlan()
   }, [clientId])
 
   async function loadActiveMeso() {
@@ -92,6 +95,24 @@ export default function ClientDetail() {
       const cal = t => days?.find(d => d.day_type === t)?.calories
       setNutriAssign({ template_name: tpl?.name || 'Nutrition plan', train_cal: cal('training'), rest_cal: cal('rest') })
     } catch { setNutriAssign(null) }
+  }
+  async function loadMealPlan() {
+    try {
+      const { data } = await supabase.from('meal_plans')
+        .select('content').eq('client_id', clientId).maybeSingle()
+      setMealText(data?.content || '')
+    } catch { /* table missing until migration */ }
+  }
+  async function saveMealPlan(e) {
+    e.preventDefault(); setMealBusy(true); setMealSaved(false)
+    try {
+      const { error } = await supabase.from('meal_plans').upsert(
+        { client_id: clientId, content: mealText, updated_at: new Date().toISOString() },
+        { onConflict: 'client_id' })
+      if (error) throw error
+      setMealSaved(true); setTimeout(() => setMealSaved(false), 2500)
+    } catch { /* surface quietly */ }
+    setMealBusy(false)
   }
 
   // ── existing loaders (all preserved verbatim) ──────────────────────────────
@@ -684,6 +705,22 @@ export default function ClientDetail() {
           <NutritionAssign clientId={clientId} />
           <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 14 }}>
             Template targets above take precedence over the manual plan below.
+          </div>
+          <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 18, padding: '24px 26px', marginBottom: 14 }}>
+            <div style={EYEBROW}>Meal Plan</div>
+            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.3px', marginBottom: 6 }}>What They Actually Eat</div>
+            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16 }}>
+              Write the real plan in plain words — the client sees this on their Fuel tab. The food coach uses it as the boss's word.
+            </div>
+            <form onSubmit={saveMealPlan}>
+              <textarea rows={8} value={mealText} onChange={e => setMealText(e.target.value)}
+                placeholder={"Meal 1 (breakfast):\n3 whole eggs + 2 egg whites, 2 bagel thins\n\nMeal 2 (lunch):\n8oz chicken breast, 300g white rice, veggies\n\n..."}
+                style={{ resize: 'vertical', marginBottom: 14 }} />
+              <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+                <button className="btn-primary" type="submit" disabled={mealBusy} style={{ maxWidth: 240 }}>{mealBusy ? 'Saving…' : 'Save Meal Plan'}</button>
+                {mealSaved && <span style={{ color: 'var(--g)', fontWeight: 700, fontSize: 14 }}>✓ Saved</span>}
+              </div>
+            </form>
           </div>
           <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 18, padding: '24px 26px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 26 }}>
