@@ -535,6 +535,11 @@ input, select, textarea { font-size: 16px; }
   .coach-heading > div:last-child { width: 100%; }
   .coach-heading > div:last-child > button { flex: 1 1 0; }
 
+  /* Template exercise editor: stack on phones — name full-width, numbers 3-across */
+  .tpl-ex-header { display: none !important; }
+  .tpl-ex-grid { grid-template-columns: repeat(3, 1fr) !important; }
+  .tpl-ex-grid > input:first-child { grid-column: 1 / -1; }
+
   /* Prevent the client-card header from overflowing */
   .coach-cards { overflow: hidden; }
 }
