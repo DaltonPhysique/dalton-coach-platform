@@ -58,14 +58,41 @@ export default function ClientDetail() {
   const [notes,       setNotes]      = useState([])
   const [noteText,    setNoteText]   = useState('')
   const [noteBusy,    setNoteBusy]   = useState(false)
+  const [activeMeso,  setActiveMeso] = useState(null)
+  const [nutriAssign, setNutriAssign]= useState(null)
   const [checklist,   setChecklist]  = useState([])
   const [checklistText, setChecklistText] = useState('')
   const [checklistBusy, setChecklistBusy] = useState(false)
 
   useEffect(() => {
     loadClient(); loadWeights(); loadPhotos(); loadNutritionPlan(); loadTrainingPlan()
-    loadStats(); loadRecLogs(); loadNotes(); loadChecklist()
+    loadStats(); loadRecLogs(); loadNotes(); loadChecklist(); loadActiveMeso(); loadNutriAssign()
   }, [clientId])
+
+  async function loadActiveMeso() {
+    try {
+      const { data: mc } = await supabase.from('client_mesocycles')
+        .select('id, start_date, status, template_id').eq('client_id', clientId).eq('status', 'active')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      if (!mc) { setActiveMeso(null); return }
+      const { data: tpl } = await supabase.from('mesocycle_templates')
+        .select('name, weeks').eq('id', mc.template_id).maybeSingle()
+      setActiveMeso({ ...mc, template_name: tpl?.name || 'Mesocycle', template_weeks: tpl?.weeks || 4 })
+    } catch { setActiveMeso(null) }
+  }
+  async function loadNutriAssign() {
+    try {
+      const { data: cn } = await supabase.from('client_nutrition')
+        .select('template_id, day_override').eq('client_id', clientId).maybeSingle()
+      if (!cn?.template_id) { setNutriAssign(null); return }
+      const { data: tpl } = await supabase.from('nutrition_templates')
+        .select('name').eq('id', cn.template_id).maybeSingle()
+      const { data: days } = await supabase.from('nutrition_template_days')
+        .select('day_type, calories').eq('template_id', cn.template_id)
+      const cal = t => days?.find(d => d.day_type === t)?.calories
+      setNutriAssign({ template_name: tpl?.name || 'Nutrition plan', train_cal: cal('training'), rest_cal: cal('rest') })
+    } catch { setNutriAssign(null) }
+  }
 
   // ── existing loaders (all preserved verbatim) ──────────────────────────────
   async function loadClient() {
@@ -432,13 +459,24 @@ export default function ClientDetail() {
               <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 13, padding: '14px 16px' }}>
                 <div style={EYEBROW}>Current Calories</div>
                 <div style={{ fontSize: 15, fontWeight: 700 }}>
-                  {nutritionPlan ? `${nutritionPlan.training_cal} / ${nutritionPlan.rest_cal}` : '—'}
-                  {nutritionPlan && <span style={{ fontSize: 11, color: 'var(--text3)' }}> train / rest</span>}
+                  {(() => {
+                    const tc = nutritionPlan?.training_cal ?? nutriAssign?.train_cal
+                    const rc = nutritionPlan?.rest_cal ?? nutriAssign?.rest_cal
+                    if (tc == null && rc == null) return '—'
+                    return (<>{tc ?? '—'} / {rc ?? '—'}
+                      <span style={{ fontSize: 11, color: 'var(--text3)' }}> train / rest</span></>)
+                  })()}
                 </div>
+                {nutriAssign && !nutritionPlan && (
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>{nutriAssign.template_name}</div>
+                )}
               </div>
               <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 13, padding: '14px 16px' }}>
                 <div style={EYEBROW}>Training Split</div>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>{trainingPlan?.name || '—'}</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>{activeMeso ? activeMeso.template_name : (trainingPlan?.name || '—')}</div>
+                {activeMeso && (
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Mesocycle · started {activeMeso.start_date}</div>
+                )}
               </div>
             </div>
 
