@@ -276,20 +276,20 @@ export default function MesocycleTemplates() {
                   <button type="button" onClick={() => setDays(ds => ds.filter((_, i) => i !== di))}
                     style={{ background: 'var(--rbg)', border: '1px solid var(--rbrd)', color: 'var(--r)', borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>Remove</button>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 52px 52px 52px 52px 64px 28px', gap: 6, marginBottom: 6, padding: '0 2px' }}>
+                <div className="tpl-ex-header" style={{ display: 'grid', gridTemplateColumns: '2fr 52px 52px 52px 52px 64px 28px', gap: 6, marginBottom: 6, padding: '0 2px' }}>
                   {['Exercise', 'Sets', 'Min', 'Max', 'RIR', 'Start lb', ''].map(h => (
                     <div key={h} style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.5px', textTransform: 'uppercase', color: 'var(--text3)' }}>{h}</div>
                   ))}
                 </div>
                 {d.exercises.map((e, ei) => (
                   <div key={ei} style={{ marginBottom: 10 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 52px 52px 52px 52px 64px 28px', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                    <div className="tpl-ex-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 52px 52px 52px 52px 64px 28px', gap: 6, marginBottom: 6, alignItems: 'center' }}>
                       <input value={e.exercise} onChange={ev => updateEx(di, ei, 'exercise', ev.target.value)} placeholder="Bench Press" style={inputSm} />
-                      <input type="number" value={e.sets} onChange={ev => updateEx(di, ei, 'sets', ev.target.value)} style={{ ...inputSm, textAlign: 'center' }} />
-                      <input type="number" value={e.rep_min} onChange={ev => updateEx(di, ei, 'rep_min', ev.target.value)} style={{ ...inputSm, textAlign: 'center' }} />
-                      <input type="number" value={e.rep_max} onChange={ev => updateEx(di, ei, 'rep_max', ev.target.value)} style={{ ...inputSm, textAlign: 'center' }} />
-                      <input type="number" value={e.target_rir} onChange={ev => updateEx(di, ei, 'target_rir', ev.target.value)} style={{ ...inputSm, textAlign: 'center' }} />
-                      <input type="number" value={e.start_weight} onChange={ev => updateEx(di, ei, 'start_weight', ev.target.value)} placeholder="135" style={{ ...inputSm, textAlign: 'center' }} />
+                      <input type="number" value={e.sets} onChange={ev => updateEx(di, ei, 'sets', ev.target.value)} placeholder="Sets" style={{ ...inputSm, textAlign: 'center' }} />
+                      <input type="number" value={e.rep_min} onChange={ev => updateEx(di, ei, 'rep_min', ev.target.value)} placeholder="Min" style={{ ...inputSm, textAlign: 'center' }} />
+                      <input type="number" value={e.rep_max} onChange={ev => updateEx(di, ei, 'rep_max', ev.target.value)} placeholder="Max" style={{ ...inputSm, textAlign: 'center' }} />
+                      <input type="number" value={e.target_rir} onChange={ev => updateEx(di, ei, 'target_rir', ev.target.value)} placeholder="RIR" style={{ ...inputSm, textAlign: 'center' }} />
+                      <input type="number" value={e.start_weight} onChange={ev => updateEx(di, ei, 'start_weight', ev.target.value)} placeholder="lb" style={{ ...inputSm, textAlign: 'center' }} />
                       <button type="button" onClick={() => updateDay(di, 'exercises', d.exercises.filter((_, j) => j !== ei))}
                         style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 20, lineHeight: 1, padding: 0, cursor: 'pointer' }}>×</button>
                     </div>
