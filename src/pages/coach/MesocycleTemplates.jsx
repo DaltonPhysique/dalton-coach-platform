@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../lib/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { BASE_TEMPLATES } from '../../lib/baseTemplates'
 
 const EYEBROW = { fontSize: 10, fontWeight: 800, letterSpacing: '1.2px', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 8 }
 const LBL = { display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: '.8px', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 7 }
 const SECTION = { background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 14, padding: '18px 20px', marginBottom: 14 }
 const inputSm = { fontSize: 14, padding: '10px 12px' }
 
-const blankExercise = () => ({ exercise: '', sets: 3, rep_min: 8, rep_max: 12, target_rir: 2, start_weight: '' })
+const blankExercise = () => ({ exercise: '', sets: 3, rep_min: 8, rep_max: 12, target_rir: 2, start_weight: '', notes: '' })
 const blankDay = (day) => ({ day, exercises: [blankExercise()] })
 
 // ════════════════════════════════════════════════════════════
@@ -30,6 +31,7 @@ export default function MesocycleTemplates() {
   const [weeks, setWeeks] = useState(5)
   const [days, setDays] = useState([blankDay('Upper A')])
   const [busy, setBusy] = useState(false)
+  const [baseBusy, setBaseBusy] = useState(null) // base template name being cloned
   const [error, setError] = useState('')
 
   useEffect(() => { if (profile) loadTemplates() }, [profile])
@@ -63,7 +65,7 @@ export default function MesocycleTemplates() {
     for (const e of exs || []) {
       let d = grouped.find(g => g.day === e.session_day)
       if (!d) { d = { day: e.session_day, exercises: [] }; grouped.push(d) }
-      d.exercises.push({ exercise: e.exercise, sets: e.sets, rep_min: e.rep_min, rep_max: e.rep_max, target_rir: e.target_rir, start_weight: e.start_weight })
+      d.exercises.push({ exercise: e.exercise, sets: e.sets, rep_min: e.rep_min, rep_max: e.rep_max, target_rir: e.target_rir, start_weight: e.start_weight, notes: e.notes || '' })
     }
     setEditing(t.id); setName(t.name); setWeeks(t.weeks)
     setDays(grouped.length ? grouped : [blankDay('Upper A')])
@@ -76,6 +78,19 @@ export default function MesocycleTemplates() {
     setDays(ds => ds.map((d, i) => i === di
       ? { ...d, exercises: d.exercises.map((e, j) => j === ei ? { ...e, [field]: val } : e) }
       : d))
+  }
+
+  // Insert template_exercises rows. If the DB was migrated before the
+  // `notes` column existed, retry without it instead of failing.
+  async function insertExercises(rows) {
+    const { error } = await supabase.from('template_exercises').insert(rows)
+    if (error && /notes/i.test(error.message || '')) {
+      const stripped = rows.map(r => { const { notes, ...rest } = r; return rest })
+      const retry = await supabase.from('template_exercises').insert(stripped)
+      if (retry.error) throw retry.error
+      return
+    }
+    if (error) throw error
   }
 
   async function saveTemplate() {
@@ -107,18 +122,48 @@ export default function MesocycleTemplates() {
             template_id: templateId, session_day: d.day.trim(), exercise: e.exercise.trim(),
             sets: Number(e.sets) || 3, rep_min: Number(e.rep_min) || 8,
             rep_max: Number(e.rep_max) || 12, target_rir: Number(e.target_rir) ?? 2,
-            start_weight: Number(e.start_weight) || 0, sort_order: order++,
+            start_weight: Number(e.start_weight) || 0, notes: (e.notes || '').trim() || null,
+            sort_order: order++,
           })
         }
       }
-      const { error: exErr } = await supabase.from('template_exercises').insert(rows)
-      if (exErr) throw exErr
+      await insertExercises(rows)
       setEditing(null)
       await loadTemplates()
     } catch (e) {
       setError(e.message || 'Couldn\'t save the template.')
     }
     setBusy(false)
+  }
+
+  // Clone a base template into the coach's own templates, then open it
+  // for editing so every detail can be tweaked before assigning.
+  async function useBaseTemplate(bt) {
+    setError(''); setBaseBusy(bt.name)
+    try {
+      const { data, error } = await supabase.from('mesocycle_templates')
+        .insert({ coach_id: profile.id, name: bt.name, weeks: bt.weeks })
+        .select('id').single()
+      if (error) throw error
+      let order = 0
+      const rows = []
+      for (const d of bt.days) {
+        for (const e of d.exercises) {
+          rows.push({
+            template_id: data.id, session_day: d.day, exercise: e.exercise,
+            sets: e.sets, rep_min: e.rep_min, rep_max: e.rep_max,
+            target_rir: e.target_rir, start_weight: e.start_weight || 0,
+            notes: e.notes || null, sort_order: order++,
+          })
+        }
+      }
+      await insertExercises(rows)
+      await loadTemplates()
+      await startEdit({ id: data.id, name: bt.name, weeks: bt.weeks })
+    } catch (e) {
+      setError(e.message || 'Couldn\'t create the template from the base.')
+    }
+    setBaseBusy(null)
   }
 
   async function deleteTemplate(id) {
@@ -149,9 +194,48 @@ export default function MesocycleTemplates() {
 
         {loading && <div className="muted">Loading…</div>}
 
+        {/* ── base templates ── */}
+        {editing === null && !loading && (
+          <div style={{ marginBottom: 26 }}>
+            <div style={EYEBROW}>Start from a base template</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              {BASE_TEMPLATES.map(bt => (
+                <div key={bt.name} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 14, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, lineHeight: 1.3 }}>{bt.name}</div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 800, letterSpacing: '.6px', textTransform: 'uppercase',
+                      borderRadius: 6, padding: '3px 8px',
+                      background: bt.goal === 'Fat loss' ? 'var(--gbg)' : 'var(--vbg)',
+                      color: bt.goal === 'Fat loss' ? 'var(--g)' : 'var(--v2)',
+                    }}>{bt.goal}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 600 }}>
+                      {bt.weeks} weeks · {bt.days.length} days
+                    </span>
+                  </div>
+                  <button onClick={() => useBaseTemplate(bt)} disabled={baseBusy !== null}
+                    style={{
+                      marginTop: 'auto', background: baseBusy ? 'var(--bg4)' : 'linear-gradient(135deg,var(--v3),var(--v))',
+                      color: baseBusy ? 'var(--text3)' : '#fff', border: 'none', borderRadius: 10,
+                      padding: '10px 16px', fontSize: 13, fontWeight: 800, cursor: baseBusy ? 'default' : 'pointer',
+                    }}>
+                    {baseBusy === bt.name ? 'Creating…' : 'Use this template'}
+                  </button>
+                </div>
+              ))}
+            </div>
+            {error && (
+              <div style={{ background: 'var(--rbg)', border: '1px solid var(--rbrd)', color: 'var(--r)', borderRadius: 12, padding: '12px 16px', fontSize: 13, fontWeight: 600, marginTop: 12 }}>
+                {error}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── list ── */}
         {editing === null && !loading && (
           <>
+            <div style={EYEBROW}>Your templates</div>
             {templates.length === 0 && (
               <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 14 }}>
                 No templates yet. Build one — it becomes the program your clients run week to week.
@@ -198,15 +282,20 @@ export default function MesocycleTemplates() {
                   ))}
                 </div>
                 {d.exercises.map((e, ei) => (
-                  <div key={ei} style={{ display: 'grid', gridTemplateColumns: '2fr 52px 52px 52px 52px 64px 28px', gap: 6, marginBottom: 8, alignItems: 'center' }}>
-                    <input value={e.exercise} onChange={ev => updateEx(di, ei, 'exercise', ev.target.value)} placeholder="Bench Press" style={inputSm} />
-                    <input type="number" value={e.sets} onChange={ev => updateEx(di, ei, 'sets', ev.target.value)} style={{ ...inputSm, textAlign: 'center' }} />
-                    <input type="number" value={e.rep_min} onChange={ev => updateEx(di, ei, 'rep_min', ev.target.value)} style={{ ...inputSm, textAlign: 'center' }} />
-                    <input type="number" value={e.rep_max} onChange={ev => updateEx(di, ei, 'rep_max', ev.target.value)} style={{ ...inputSm, textAlign: 'center' }} />
-                    <input type="number" value={e.target_rir} onChange={ev => updateEx(di, ei, 'target_rir', ev.target.value)} style={{ ...inputSm, textAlign: 'center' }} />
-                    <input type="number" value={e.start_weight} onChange={ev => updateEx(di, ei, 'start_weight', ev.target.value)} placeholder="135" style={{ ...inputSm, textAlign: 'center' }} />
-                    <button type="button" onClick={() => updateDay(di, 'exercises', d.exercises.filter((_, j) => j !== ei))}
-                      style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 20, lineHeight: 1, padding: 0, cursor: 'pointer' }}>×</button>
+                  <div key={ei} style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 52px 52px 52px 52px 64px 28px', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                      <input value={e.exercise} onChange={ev => updateEx(di, ei, 'exercise', ev.target.value)} placeholder="Bench Press" style={inputSm} />
+                      <input type="number" value={e.sets} onChange={ev => updateEx(di, ei, 'sets', ev.target.value)} style={{ ...inputSm, textAlign: 'center' }} />
+                      <input type="number" value={e.rep_min} onChange={ev => updateEx(di, ei, 'rep_min', ev.target.value)} style={{ ...inputSm, textAlign: 'center' }} />
+                      <input type="number" value={e.rep_max} onChange={ev => updateEx(di, ei, 'rep_max', ev.target.value)} style={{ ...inputSm, textAlign: 'center' }} />
+                      <input type="number" value={e.target_rir} onChange={ev => updateEx(di, ei, 'target_rir', ev.target.value)} style={{ ...inputSm, textAlign: 'center' }} />
+                      <input type="number" value={e.start_weight} onChange={ev => updateEx(di, ei, 'start_weight', ev.target.value)} placeholder="135" style={{ ...inputSm, textAlign: 'center' }} />
+                      <button type="button" onClick={() => updateDay(di, 'exercises', d.exercises.filter((_, j) => j !== ei))}
+                        style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 20, lineHeight: 1, padding: 0, cursor: 'pointer' }}>×</button>
+                    </div>
+                    <input value={e.notes} onChange={ev => updateEx(di, ei, 'notes', ev.target.value)}
+                      placeholder="Note (optional) — e.g. Burnout, AMRAP, max hold"
+                      style={{ ...inputSm, fontSize: 12, padding: '8px 12px', color: 'var(--text2)' }} />
                   </div>
                 ))}
                 <button type="button" onClick={() => updateDay(di, 'exercises', [...d.exercises, blankExercise()])}
