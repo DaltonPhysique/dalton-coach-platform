@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { localDateStr } from '../../lib/dates'
 import { normalizePhase, deltaColor, netChangeLabel, progressPctOf } from '../../lib/phase'
 import { mergeRecLogs, avgRecPct, recPct } from '../../lib/recovery'
+import MesocycleTab from './MesocycleTab'
 
 const ANGLES = ['front', 'side', 'back']
 const EYEBROW = { fontSize: 10, fontWeight: 800, letterSpacing: '1.2px', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 8 }
@@ -289,6 +290,7 @@ export default function ClientDetail() {
     { id: 'photos',    label: 'Photos'    },
     { id: 'nutrition', label: 'Nutrition' },
     { id: 'training',  label: 'Training'  },
+    { id: 'mesocycle', label: 'Mesocycle' },
     { id: 'checklist', label: 'Checklist' },
   ]
 
@@ -726,6 +728,9 @@ export default function ClientDetail() {
             </form>
           </div>
         )}
+
+        {/* ══════ MESOCYCLE TAB ══════ */}
+        {tab === 'mesocycle' && <MesocycleTab clientId={clientId} />}
 
         {/* ══════ CHECKLIST TAB ══════ */}
         {tab === 'checklist' && (
