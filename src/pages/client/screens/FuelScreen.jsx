@@ -2,10 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { DAY_TYPES, DAY_LABELS, resolveDayType, inferDayTypeFromLogs, todaysMacros } from '../../../lib/nutrition'
 import { localDateStr } from '../../../lib/dates'
-import {
-  foodSearchAvailable, searchFoods, scaleMacros, gramsFromOz,
-  MEALS, MEAL_LABELS,
-} from '../../../lib/fooddb'
+import { MEALS, MEAL_LABELS } from '../../../lib/fooddb'
 
 // ════════════════════════════════════════════════════════════
 // FUEL — client nutrition tab.
@@ -14,14 +11,16 @@ import {
 //  1. Template assigned (new): "Today's targets" resolved from the
 //     coach's nutrition template day rows. Day type auto-detects
 //     from today's logged session (leg keywords) with a manual
-//     override toggle. Food log + remaining macros + grocery below.
+//     override toggle. Remaining macros + AI food coach + the
+//     coach's written meal plan + grocery below.
 //  2. No template (legacy): the old nutrition_plans training/rest
-//     view, unchanged, with the food log appended. Honest empty
-//     states when nothing is set.
+//     view, unchanged, with remaining + AI coach appended.
+//     Honest empty states when nothing is set.
 //
-// Food logging powers "remaining macros" — the number the future
-// AI meal-builder will use. USDA search needs VITE_USDA_API_KEY;
-// without it, search degrades honestly and manual entry works.
+// There is deliberately NO manual food logging UI — no database
+// search, no grams entry. The client just tells the AI food coach
+// what they ate ("3 eggs and toast") and it estimates, logs it to
+// food_logs, and reports what's left. Not another MyFitnessPal.
 // ════════════════════════════════════════════════════════════
 
 const inputLg = { fontSize: 16, padding: '12px 14px', width: '100%' }
@@ -40,7 +39,7 @@ function sumLogs(logs) {
 }
 
 // ── Today's food log + remaining macros ─────────────────────
-function FoodLog({ clientId, targets, onLog, refreshKey }) {
+function FoodLog({ clientId, targets, refreshKey }) {
   const [logs, setLogs] = useState([])
   const [ok, setOk] = useState(true)
   const [confirmDel, setConfirmDel] = useState(null)
@@ -79,11 +78,9 @@ function FoodLog({ clientId, targets, onLog, refreshKey }) {
 
   return (
     <div className="card" style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div className="v2-card-eyebrow" style={{ margin: 0 }}>Today's food</div>
-        <button onClick={onLog} className="btn-primary" style={{ maxWidth: 150, padding: '9px 16px', fontSize: 13 }}>
-          + Log food
-        </button>
+      <div className="v2-card-eyebrow" style={{ marginBottom: 12 }}>Today's food</div>
+      <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>
+        Tell the food coach what you eat — it tracks it here automatically.
       </div>
 
       {rem && (
@@ -117,8 +114,8 @@ function FoodLog({ clientId, targets, onLog, refreshKey }) {
 
       {logs.length === 0 ? (
         <div className="empty-state" style={{ padding: '18px 12px' }}>
-          <div className="icon">📝</div>
-          Nothing logged today yet.
+          <div className="icon">💬</div>
+          Nothing tracked yet — just tell the food coach what you had.
         </div>
       ) : MEALS.map(m => {
         const items = logs.filter(l => l.meal === m)
@@ -156,235 +153,13 @@ function FoodLog({ clientId, targets, onLog, refreshKey }) {
   )
 }
 
-// ── Log-food bottom sheet ───────────────────────────────────
-function FoodSheet({ clientId, onClose, onAdded }) {
-  const [tab, setTab] = useState('search') // 'search' | 'manual'
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState([])
-  const [searching, setSearching] = useState(false)
-  const [picked, setPicked] = useState(null) // { name, per100, source, presetGrams }
-  const [amount, setAmount] = useState('')
-  const [unit, setUnit] = useState('g')
-  const [meal, setMeal] = useState('lunch')
-  const [recent, setRecent] = useState([])
-  const [busy, setBusy] = useState(false)
-  const [man, setMan] = useState({ name: '', grams: '', calories: '', protein: '', carbs: '', fat: '' })
-
-  const searchOk = foodSearchAvailable()
-
-  useEffect(() => { loadRecent() }, [])
-  useEffect(() => {
-    if (!searchOk || !query.trim()) { setResults([]); return }
-    setSearching(true)
-    const t = setTimeout(async () => {
-      const r = await searchFoods(query)
-      setResults(r)
-      setSearching(false)
-    }, 500)
-    return () => clearTimeout(t)
-  }, [query])
-
-  async function loadRecent() {
-    try {
-      const { data } = await supabase.from('food_logs')
-        .select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(80)
-      const seen = new Map()
-      for (const l of data || []) {
-        if (!seen.has(l.description)) seen.set(l.description, l)
-        if (seen.size >= 10) break
-      }
-      setRecent([...seen.values()])
-    } catch { /* quiet */ }
-  }
-
-  function pickUsda(f) {
-    setPicked({ name: f.brand ? `${f.name} (${f.brand})` : f.name, per100: f, source: 'usda', presetGrams: 100 })
-    setAmount('100'); setUnit('g')
-  }
-
-  function pickRecent(l) {
-    const g = Number(l.grams) || 1
-    const per100 = {
-      caloriesPer100g: (Number(l.calories) || 0) / g * 100,
-      proteinPer100g: (Number(l.protein_g) || 0) / g * 100,
-      carbsPer100g: (Number(l.carbs_g) || 0) / g * 100,
-      fatPer100g: (Number(l.fat_g) || 0) / g * 100,
-      fiberPer100g: (Number(l.fiber_g) || 0) / g * 100,
-    }
-    setPicked({ name: l.description, per100, source: 'recent', presetGrams: g })
-    setAmount(String(g)); setUnit('g')
-  }
-
-  const grams = unit === 'oz' ? gramsFromOz(amount) : Number(amount) || 0
-  const preview = picked ? scaleMacros(picked.per100, grams) : null
-
-  async function addPicked() {
-    if (!picked || !grams || grams <= 0 || busy) return
-    setBusy(true)
-    try {
-      const { error } = await supabase.from('food_logs').insert({
-        client_id: clientId, log_date: localDateStr(), meal,
-        description: picked.name, grams: Math.round(grams * 10) / 10,
-        calories: preview.calories, protein_g: preview.protein_g,
-        carbs_g: preview.carbs_g, fat_g: preview.fat_g, fiber_g: preview.fiber_g,
-        source: picked.source === 'usda' ? 'usda' : 'manual',
-      })
-      if (error) throw error
-      onAdded()
-    } catch { /* keep sheet open on failure */ }
-    setBusy(false)
-  }
-
-  async function addManual() {
-    const g = Number(man.grams) || 0
-    if (!man.name.trim() || !g || g <= 0 || busy) return
-    setBusy(true)
-    try {
-      const { error } = await supabase.from('food_logs').insert({
-        client_id: clientId, log_date: localDateStr(), meal,
-        description: man.name.trim(), grams: g,
-        calories: Number(man.calories) || 0, protein_g: Number(man.protein) || 0,
-        carbs_g: Number(man.carbs) || 0, fat_g: Number(man.fat) || 0, fiber_g: 0,
-        source: 'manual',
-      })
-      if (error) throw error
-      onAdded()
-    } catch { /* keep sheet open on failure */ }
-    setBusy(false)
-  }
-
-  return (
-    <div
-      style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
-      onClick={onClose}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: 'var(--bg2)', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 540,
-          maxHeight: '90vh', overflowY: 'auto', padding: '16px 18px calc(20px + env(safe-area-inset-bottom))',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ fontSize: 17, fontWeight: 800 }}>Log food</div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--text3)', padding: '6px 10px' }}>×</button>
-        </div>
-
-        <div className="v2-subtabs" style={{ marginBottom: 14 }}>
-          <button className={`v2-subtab ${tab === 'search' ? 'active' : ''}`} onClick={() => { setTab('search'); setPicked(null) }}>Search</button>
-          <button className={`v2-subtab ${tab === 'manual' ? 'active' : ''}`} onClick={() => { setTab('manual'); setPicked(null) }}>Quick add</button>
-        </div>
-
-        {tab === 'search' && !picked && (
-          <>
-            {!searchOk ? (
-              <div className="empty-state">
-                <div className="icon">🔌</div>
-                Food search isn't connected yet — your coach needs to add a USDA key.
-                Manual entry below works fine.
-              </div>
-            ) : (
-              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search food — e.g. jasmine rice"
-                autoFocus style={{ ...inputLg, marginBottom: 10 }} />
-            )}
-            {searchOk && searching && <div style={{ fontSize: 13, color: 'var(--text3)', padding: '8px 2px' }}>Searching…</div>}
-            {searchOk && !searching && results.map(f => (
-              <button key={f.fdcId} onClick={() => pickUsda(f)}
-                style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', padding: '11px 4px', minHeight: 52 }}>
-                <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{f.name}</span>
-                <span style={{ display: 'block', fontSize: 12, color: 'var(--text3)' }}>
-                  per 100g · {Math.round(f.caloriesPer100g)} cal · {Math.round(f.proteinPer100g)}P / {Math.round(f.carbsPer100g)}C / {Math.round(f.fatPer100g)}F
-                </span>
-              </button>
-            ))}
-            {recent.length > 0 && (
-              <>
-                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.6px', textTransform: 'uppercase', color: 'var(--text3)', margin: '14px 0 8px' }}>
-                  Recent
-                </div>
-                <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6 }}>
-                  {recent.map(l => (
-                    <button key={l.id} onClick={() => pickRecent(l)}
-                      style={{ flexShrink: 0, background: 'var(--bg4)', border: '1px solid var(--border2)', borderRadius: 10, padding: '9px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-                      {l.description}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </>
-        )}
-
-        {picked && (
-          <div>
-            <button onClick={() => setPicked(null)} style={{ background: 'none', border: 'none', color: 'var(--v2)', fontSize: 13, fontWeight: 700, padding: '4px 0 10px' }}>
-              ← Back to results
-            </button>
-            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 10 }}>{picked.name}</div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <input type="number" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)}
-                placeholder="Amount" style={{ ...inputLg, flex: 1 }} />
-              <div className="v2-subtabs" style={{ flexShrink: 0 }}>
-                <button className={`v2-subtab ${unit === 'g' ? 'active' : ''}`} onClick={() => setUnit('g')}>g</button>
-                <button className={`v2-subtab ${unit === 'oz' ? 'active' : ''}`} onClick={() => setUnit('oz')}>oz</button>
-              </div>
-            </div>
-            {preview && grams > 0 && (
-              <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', marginBottom: 12, fontSize: 13 }}>
-                <span style={{ color: 'var(--text3)' }}>{Math.round(grams * 10) / 10}g → </span>
-                <strong>{preview.calories} cal</strong>
-                <span style={{ color: 'var(--text3)' }}> · {preview.protein_g}P / {preview.carbs_g}C / {preview.fat_g}F</span>
-              </div>
-            )}
-            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.6px', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 8 }}>Meal</div>
-            <div className="v2-subtabs" style={{ marginBottom: 14 }}>
-              {MEALS.map(m => (
-                <button key={m} className={`v2-subtab ${meal === m ? 'active' : ''}`} onClick={() => setMeal(m)}>
-                  {MEAL_LABELS[m]}
-                </button>
-              ))}
-            </div>
-            <button onClick={addPicked} disabled={busy || !grams || grams <= 0} className="btn-primary" style={{ width: '100%' }}>
-              {busy ? 'Adding…' : 'Add to log'}
-            </button>
-          </div>
-        )}
-
-        {tab === 'manual' && (
-          <div>
-            <input value={man.name} onChange={e => setMan({ ...man, name: e.target.value })} placeholder="Food name" style={{ ...inputLg, marginBottom: 10 }} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-              <input type="number" inputMode="decimal" value={man.grams} onChange={e => setMan({ ...man, grams: e.target.value })} placeholder="Grams" style={inputLg} />
-              <input type="number" inputMode="decimal" value={man.calories} onChange={e => setMan({ ...man, calories: e.target.value })} placeholder="Calories" style={inputLg} />
-              <input type="number" inputMode="decimal" value={man.protein} onChange={e => setMan({ ...man, protein: e.target.value })} placeholder="Protein (g)" style={inputLg} />
-              <input type="number" inputMode="decimal" value={man.carbs} onChange={e => setMan({ ...man, carbs: e.target.value })} placeholder="Carbs (g)" style={inputLg} />
-            </div>
-            <input type="number" inputMode="decimal" value={man.fat} onChange={e => setMan({ ...man, fat: e.target.value })} placeholder="Fat (g)" style={{ ...inputLg, marginBottom: 12 }} />
-            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.6px', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 8 }}>Meal</div>
-            <div className="v2-subtabs" style={{ marginBottom: 14 }}>
-              {MEALS.map(m => (
-                <button key={m} className={`v2-subtab ${meal === m ? 'active' : ''}`} onClick={() => setMeal(m)}>
-                  {MEAL_LABELS[m]}
-                </button>
-              ))}
-            </div>
-            <button onClick={addManual} disabled={busy} className="btn-primary" style={{ width: '100%' }}>
-              {busy ? 'Adding…' : 'Add to log'}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ── AI food coach chat ("me in your pocket 24/7") ──────────
 // Context (targets, consumed, remaining, day type) is built here
 // and sent to /.netlify/functions/ai-coach with the session token.
 // The function verifies the client, calls Anthropic, and saves
 // both messages to ai_chat_logs. If the table or the function
 // isn't set up yet, this degrades to an honest quiet state.
-function FoodCoachChat({ clientId, targets, dayLabel, coachNote, clientName }) {
+function FoodCoachChat({ clientId, targets, dayLabel, coachNote, clientName, onFoodLogged }) {
   const [msgs, setMsgs] = useState([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -473,6 +248,7 @@ function FoodCoachChat({ clientId, targets, dayLabel, coachNote, clientName }) {
       if (!resp.ok) throw new Error(data.error || 'failed')
 
       setMsgs(m => [...m, { role: 'assistant', message: data.reply, created_at: new Date().toISOString() }])
+      if (data.logged && data.logged.length > 0 && onFoodLogged) onFoodLogged()
     } catch (e) {
       setMsgs(m => m.filter(x => x !== userMsg))
       setErr(
@@ -561,8 +337,8 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType, profile
   const [override, setOverride] = useState(null) // null = auto
   const [autoType, setAutoType] = useState(null)
   const [grocery, setGrocery] = useState([]) // [{ listId, name, cats: [{category, items:[{item, checked}]}] }]
+  const [mealPlan, setMealPlan] = useState('')
   const [loaded, setLoaded] = useState(false)
-  const [sheetOpen, setSheetOpen] = useState(false)
   const [foodBump, setFoodBump] = useState(0)
 
   useEffect(() => { if (profile?.id) loadAll() }, [profile?.id])
@@ -596,6 +372,13 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType, profile
         setAutoType(inferred)
       }
     } catch { /* tables missing until migration — legacy UI */ }
+
+    try {
+      // ── coach's written meal plan ──
+      const { data: mp } = await supabase.from('meal_plans')
+        .select('content').eq('client_id', profile.id).maybeSingle()
+      setMealPlan(mp?.content || '')
+    } catch { /* table missing until migration */ }
 
     try {
       // ── grocery lists ──
@@ -660,11 +443,6 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType, profile
         .eq('client_id', profile.id).eq('list_id', listId).eq('checked_date', localDateStr())
     } catch { /* non-fatal */ }
   }
-
-  const foodSheet = sheetOpen && profile?.id && (
-    <FoodSheet clientId={profile.id} onClose={() => setSheetOpen(false)}
-      onAdded={() => { setSheetOpen(false); setFoodBump(b => b + 1) }} />
-  )
 
   // ════════ template mode ════════
   if (tplDays !== null) {
@@ -763,7 +541,17 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType, profile
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 12 }}>From "{tplName}" — set by your coach</div>
         </div>
 
-        <FoodLog clientId={profile.id} targets={targets} onLog={() => setSheetOpen(true)} refreshKey={foodBump} />
+        {mealPlan && (
+          <div className="card" style={{ marginBottom: 14 }}>
+            <div className="v2-card-eyebrow" style={{ marginBottom: 10 }}>📋 Your meal plan</div>
+            <div style={{ fontSize: 14, lineHeight: 1.65, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
+              {mealPlan}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 12 }}>Written by your coach — ask the food coach if you need swaps.</div>
+          </div>
+        )}
+
+        <FoodLog clientId={profile.id} targets={targets} refreshKey={foodBump} />
 
         <FoodCoachChat
           clientId={profile.id}
@@ -771,6 +559,7 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType, profile
           dayLabel={DAY_LABELS[resolved]}
           coachNote={tplNotes}
           clientName={profile?.full_name}
+          onFoodLogged={() => setFoodBump(b => b + 1)}
         />
 
         {grocery.map(g => (
@@ -811,7 +600,6 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType, profile
             ))}
           </div>
         ))}
-        {foodSheet}
       </div>
     )
   }
@@ -923,7 +711,16 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType, profile
       </div>
 
       <div style={{ marginTop: 14 }}>
-        <FoodLog clientId={profile?.id} targets={legacyTargets} onLog={() => setSheetOpen(true)} refreshKey={foodBump} />
+        {mealPlan && (
+          <div className="card" style={{ marginBottom: 14 }}>
+            <div className="v2-card-eyebrow" style={{ marginBottom: 10 }}>📋 Your meal plan</div>
+            <div style={{ fontSize: 14, lineHeight: 1.65, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
+              {mealPlan}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 12 }}>Written by your coach — ask the food coach if you need swaps.</div>
+          </div>
+        )}
+        <FoodLog clientId={profile?.id} targets={legacyTargets} refreshKey={foodBump} />
       </div>
       <div style={{ marginTop: 14 }}>
         <FoodCoachChat
@@ -932,9 +729,9 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType, profile
           dayLabel={dayType === 'training' ? 'Training' : 'Rest'}
           coachNote={nutritionPlan?.notes}
           clientName={profile?.full_name}
+          onFoodLogged={() => setFoodBump(b => b + 1)}
         />
       </div>
-      {foodSheet}
     </div>
   )
 }
