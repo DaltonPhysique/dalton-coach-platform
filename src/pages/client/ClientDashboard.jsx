@@ -215,7 +215,7 @@ export default function ClientDashboard() {
         <FuelScreen nutritionPlan={nutritionPlan} dayType={dayType} setDayType={setDayType} />
       )}
 
-      {activeNav === 'train' && <TrainScreen trainingPlan={trainingPlan} />}
+      {activeNav === 'train' && <TrainScreen trainingPlan={trainingPlan} profile={profile} />}
 
       {activeNav === 'log' && <LogbookScreen profile={profile} />}
 
