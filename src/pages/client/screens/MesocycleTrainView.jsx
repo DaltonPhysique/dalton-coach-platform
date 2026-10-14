@@ -225,6 +225,9 @@ export default function MesocycleTrainView({ profile, mesocycle, templateExercis
                 {' '}· {NOTE_LABEL[rx.note]}
               </span>
             </div>
+            {ex.notes && (
+              <div style={{ fontSize: 12, color: 'var(--text3)', fontStyle: 'italic', marginBottom: 6 }}>{ex.notes}</div>
+            )}
             {Array.from({ length: rx.sets }, (_, i) => {
               const setNum = i + 1
               const key = loggedKey(ex.exercise, setNum)
