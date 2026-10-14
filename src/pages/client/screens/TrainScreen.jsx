@@ -10,6 +10,7 @@ export default function TrainScreen({ trainingPlan, profile }) {
   const [tex, setTex] = useState([])           // template_exercises rows
   const [setLogs, setSetLogs] = useState([])   // this mesocycle's set_logs
   const [mesoChecked, setMesoChecked] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [activeDay, setActiveDay] = useState(0) // classic fallback day tabs
 
   useEffect(() => {
@@ -30,7 +31,12 @@ export default function TrainScreen({ trainingPlan, profile }) {
         .maybeSingle()
       if (error) throw error
       mc = data
-    } catch { setMesoChecked(true); return }
+    } catch (e) {
+      console.error('mesocycle load failed:', e?.message)
+      setLoadError(e?.message || 'query failed')
+      setMesoChecked(true)
+      return
+    }
     if (!mc) { setMesoChecked(true); return }
 
     const [{ data: tpl }, { data: exs }] = await Promise.all([
@@ -82,6 +88,11 @@ export default function TrainScreen({ trainingPlan, profile }) {
           <div className="empty-state">
             <div className="icon">🏋️</div>
             Your coach hasn't assigned a training plan yet.
+            {loadError && (
+              <div style={{ marginTop: 10, fontSize: 11, color: 'var(--r)', maxWidth: 300 }}>
+                Debug: {loadError}
+              </div>
+            )}
           </div>
         </div>
       )}
