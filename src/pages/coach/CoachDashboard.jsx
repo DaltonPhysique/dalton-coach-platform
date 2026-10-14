@@ -380,6 +380,16 @@ export default function CoachDashboard() {
           >
             🏋️ Templates
           </button>
+          <button
+            onClick={() => navigate('/coach/nutrition')}
+            style={{
+              background: 'var(--bg4)', color: 'var(--text2)',
+              border: '1px solid var(--border2)',
+              borderRadius: 11, padding: '11px 22px', fontSize: 14, fontWeight: 800, flexShrink: 0,
+            }}
+          >
+            🥗 Nutrition
+          </button>
           </div>
         </div>
 
