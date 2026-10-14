@@ -6,6 +6,7 @@ import { localDateStr } from '../../lib/dates'
 import { normalizePhase, deltaColor, netChangeLabel, progressPctOf } from '../../lib/phase'
 import { mergeRecLogs, avgRecPct, recPct } from '../../lib/recovery'
 import MesocycleTab from './MesocycleTab'
+import NutritionAssign from './NutritionAssign'
 
 const ANGLES = ['front', 'side', 'back']
 const EYEBROW = { fontSize: 10, fontWeight: 800, letterSpacing: '1.2px', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 8 }
@@ -637,7 +638,11 @@ export default function ClientDetail() {
         )}
 
         {/* ══════ NUTRITION PLAN TAB ══════ */}
-        {tab === 'nutrition' && (
+        {tab === 'nutrition' && (<>
+          <NutritionAssign clientId={clientId} />
+          <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 14 }}>
+            Template targets above take precedence over the manual plan below.
+          </div>
           <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 18, padding: '24px 26px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 26 }}>
               <div>
@@ -680,7 +685,7 @@ export default function ClientDetail() {
               </div>
             </form>
           </div>
-        )}
+        </>)}
 
         {/* ══════ TRAINING PLAN TAB ══════ */}
         {tab === 'training' && (
