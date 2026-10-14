@@ -531,6 +531,10 @@ input, select, textarea { font-size: 16px; }
   /* Client detail header bars: less side padding on phones */
   .coach-detail-bar { padding-left: 16px !important; padding-right: 16px !important; }
 
+  /* Command Center heading: buttons drop below the title and go full-width */
+  .coach-heading > div:last-child { width: 100%; }
+  .coach-heading > div:last-child > button { flex: 1 1 0; }
+
   /* Prevent the client-card header from overflowing */
   .coach-cards { overflow: hidden; }
 }
