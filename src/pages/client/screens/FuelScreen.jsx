@@ -833,6 +833,7 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType, profile
   const cPct = totalCal ? Math.round((cCal / totalCal) * 100) : 0
   const fPct = totalCal ? Math.round((fCal / totalCal) * 100) : 0
   const totalG = p + c + f
+  const fiber = dayType === 'training' ? nutritionPlan?.training_fiber : nutritionPlan?.rest_fiber
   const legacyTargets = nutritionPlan ? {
     calories: Number(cal) || 0, protein_g: p, carbs_g: c, fat_g: f,
   } : null
@@ -879,8 +880,8 @@ export default function FuelScreen({ nutritionPlan, dayType, setDayType, profile
                 <div className="value" style={{ color: 'var(--a)' }}>{fat ?? '—'}<span className="sub">g</span></div>
               </div>
               <div className="v2-macro-box">
-                <div className="label">Total Grams</div>
-                <div className="value">{totalG || '—'}</div>
+                <div className="label">Fiber</div>
+                <div className="value">{fiber ?? '—'}<span className="sub">g</span></div>
               </div>
             </div>
 
