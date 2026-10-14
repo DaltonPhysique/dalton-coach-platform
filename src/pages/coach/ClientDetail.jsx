@@ -703,9 +703,11 @@ export default function ClientDetail() {
         {/* ══════ NUTRITION PLAN TAB ══════ */}
         {tab === 'nutrition' && (<>
           <NutritionAssign clientId={clientId} />
-          <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 14 }}>
-            Template targets above take precedence over the manual plan below.
-          </div>
+          {!nutriAssign && (
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 14 }}>
+              No template assigned — set manual targets below, or assign a template above.
+            </div>
+          )}
           <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 18, padding: '24px 26px', marginBottom: 14 }}>
             <div style={EYEBROW}>Meal Plan</div>
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.3px', marginBottom: 6 }}>What They Actually Eat</div>
@@ -722,6 +724,7 @@ export default function ClientDetail() {
               </div>
             </form>
           </div>
+          {!nutriAssign && (
           <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 18, padding: '24px 26px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 26 }}>
               <div>
@@ -764,6 +767,7 @@ export default function ClientDetail() {
               </div>
             </form>
           </div>
+          )}
         </>)}
 
         {/* ══════ TRAINING PLAN TAB ══════ */}
